@@ -36,6 +36,7 @@ export default function HomeScreen() {
   const [showSearch, setShowSearch] = useState(false);
   const [showSwitcher, setShowSwitcher] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("list");
+  const [manageFavoritesMode, setManageFavoritesMode] = useState(false);
 
   const handlePlayChannel = (channel: Channel) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -132,16 +133,24 @@ export default function HomeScreen() {
           {viewMode === "epg" && currentSection === "TV" ? (
             /* EPG Grid view */
             <View style={styles.epgContainer}>
-              <GroupList />
+              <GroupList onManageFavorites={() => {
+                setManageFavoritesMode(true);
+                setViewMode("list");
+              }} />
               <EPGGrid onPlayChannel={handlePlayChannel} onCatchUp={handleCatchUp} />
             </View>
           ) : (
             /* List view */
             <View style={styles.listContainer}>
-              <GroupList />
+              <GroupList onManageFavorites={() => setManageFavoritesMode(true)} />
               <View style={styles.channelArea}>
-                {selectedChannel && <ProgramInfo onPlay={handlePlayChannel} />}
-                <ChannelList onPlayChannel={handlePlayChannel} onCatchUp={handleCatchUp} />
+                {selectedChannel && !manageFavoritesMode && <ProgramInfo onPlay={handlePlayChannel} />}
+                <ChannelList
+                  onPlayChannel={handlePlayChannel}
+                  onCatchUp={handleCatchUp}
+                  manageFavoritesMode={manageFavoritesMode}
+                  onExitManageFavorites={() => setManageFavoritesMode(false)}
+                />
               </View>
             </View>
           )}

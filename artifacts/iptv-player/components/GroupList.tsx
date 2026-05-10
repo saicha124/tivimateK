@@ -12,6 +12,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { GroupContextMenu } from "@/components/GroupContextMenu";
+import { GroupOptionsSheet } from "@/components/GroupOptionsSheet";
 import { PinPad } from "@/components/PinPad";
 import { Channel, VODItem, useIPTV } from "@/context/IPTVContext";
 import { useParental } from "@/context/ParentalContext";
@@ -32,7 +33,11 @@ function getGroups(
   return groups.filter((g) => !hiddenGroups.includes(g));
 }
 
-export function GroupList() {
+export function GroupList({
+  onManageFavorites,
+}: {
+  onManageFavorites?: (group: string) => void;
+}) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const {
@@ -43,13 +48,14 @@ export function GroupList() {
     setSelectedChannel,
     favorites,
     hiddenGroups,
+    favoritesOnlyGroups,
   } = useIPTV();
   const { isGroupLocked, unlockForSession, verifyPin } = useParental();
 
   const [pendingGroup, setPendingGroup] = useState<string | null>(null);
   const [showPin, setShowPin] = useState(false);
   const [contextGroup, setContextGroup] = useState<string | null>(null);
-  const [manageFavGroup, setManageFavGroup] = useState<string | null>(null);
+  const [groupOptionsGroup, setGroupOptionsGroup] = useState<string | null>(null);
 
   const hasFavorites = favorites.length > 0 && currentSection === "TV";
 
@@ -152,6 +158,7 @@ export function GroupList() {
           const group = item.key;
           const active = selectedGroup === group;
           const locked = isGroupLocked(group);
+          const favOnly = favoritesOnlyGroups.includes(group);
 
           return (
             <TouchableOpacity
@@ -176,6 +183,9 @@ export function GroupList() {
               >
                 {group}
               </Text>
+              {favOnly && (
+                <Feather name="star" size={11} color="#FFC107" style={{ marginLeft: 2 }} />
+              )}
               {locked && (
                 <Feather name="lock" size={12} color={colors.destructive} style={{ marginLeft: 4 }} />
               )}
@@ -202,7 +212,14 @@ export function GroupList() {
         group={contextGroup}
         visible={!!contextGroup}
         onClose={() => setContextGroup(null)}
-        onManageFavorites={(g) => setManageFavGroup(g)}
+        onManageFavorites={(g) => { onManageFavorites?.(g); }}
+        onGroupOptions={(g) => setGroupOptionsGroup(g)}
+      />
+
+      <GroupOptionsSheet
+        group={groupOptionsGroup}
+        visible={!!groupOptionsGroup}
+        onClose={() => setGroupOptionsGroup(null)}
       />
     </View>
   );

@@ -21,9 +21,10 @@ interface GroupContextMenuProps {
   visible: boolean;
   onClose: () => void;
   onManageFavorites: (group: string) => void;
+  onGroupOptions?: (group: string) => void;
 }
 
-export function GroupContextMenu({ group, visible, onClose, onManageFavorites }: GroupContextMenuProps) {
+export function GroupContextMenu({ group, visible, onClose, onManageFavorites, onGroupOptions }: GroupContextMenuProps) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { hiddenGroups, toggleHideGroup } = useIPTV();
@@ -88,7 +89,10 @@ export function GroupContextMenu({ group, visible, onClose, onManageFavorites }:
     {
       label: "Group options",
       icon: "settings" as const,
-      action: () => { onClose(); },
+      action: () => {
+        onClose();
+        if (group) onGroupOptions?.(group);
+      },
     },
   ];
 

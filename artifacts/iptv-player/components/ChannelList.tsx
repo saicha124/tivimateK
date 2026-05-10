@@ -38,9 +38,13 @@ function progress(channel: Channel) {
 export function ChannelList({
   onPlayChannel,
   onCatchUp,
+  manageFavoritesMode = false,
+  onExitManageFavorites,
 }: {
   onPlayChannel: (channel: Channel) => void;
   onCatchUp: (channel: Channel, program: EPGProgram) => void;
+  manageFavoritesMode?: boolean;
+  onExitManageFavorites?: () => void;
 }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -54,6 +58,7 @@ export function ChannelList({
     toggleFavorite,
     blockedChannels,
     hiddenChannels,
+    favoritesOnlyGroups,
   } = useIPTV();
 
   const [contextChannel, setContextChannel] = useState<Channel | null>(null);
@@ -64,11 +69,14 @@ export function ChannelList({
 
   const items = useMemo(() => {
     if (currentSection === "TV") {
-      let list = channels.filter(
-        (c) => !hiddenChannels.includes(c.id)
-      );
+      let list = channels.filter((c) => !hiddenChannels.includes(c.id));
       if (!selectedGroup) list = list.slice(0, 100);
-      else list = list.filter((c) => c.group === selectedGroup);
+      else {
+        list = list.filter((c) => c.group === selectedGroup);
+        if (favoritesOnlyGroups.includes(selectedGroup) && !manageFavoritesMode) {
+          list = list.filter((c) => favorites.includes(c.id));
+        }
+      }
       return list;
     }
     if (currentSection === "Movies") {
@@ -95,7 +103,7 @@ export function ChannelList({
       return channels.filter((c) => favorites.includes(c.id) && !hiddenChannels.includes(c.id));
     }
     return [];
-  }, [currentSection, selectedGroup, channels, movies, shows, favorites, hiddenChannels]);
+  }, [currentSection, selectedGroup, channels, movies, shows, favorites, hiddenChannels, favoritesOnlyGroups, manageFavoritesMode]);
 
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
 
@@ -106,6 +114,22 @@ export function ChannelList({
 
   return (
     <>
+      {manageFavoritesMode && (
+        <View style={[styles.manageBanner, { backgroundColor: colors.highlight, borderBottomColor: colors.primary }]}>
+          <Feather name="star" size={14} color="#FFC107" />
+          <Text style={[styles.manageBannerText, { color: colors.foreground }]}>
+            Manage Favorites — tap a star to add or remove
+          </Text>
+          <TouchableOpacity
+            onPress={onExitManageFavorites}
+            style={[styles.doneBtn, { backgroundColor: colors.primary }]}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.doneBtnText}>Done</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       <FlatList
         data={items}
         keyExtractor={(item) => item.id}
@@ -118,6 +142,61 @@ export function ChannelList({
           const prog = progress(channel);
           const isFav = favorites.includes(channel.id);
           const isBlocked = blockedChannels.includes(channel.id);
+
+          if (manageFavoritesMode) {
+            return (
+              <View
+                style={[
+                  styles.manageItem,
+                  { borderBottomColor: colors.border },
+                  isBlocked && { opacity: 0.45 },
+                ]}
+              >
+                <View style={styles.indexContainer}>
+                  <Text style={[styles.index, { color: colors.mutedForeground }]}>{index + 1}</Text>
+                </View>
+
+                <View style={[styles.logo, { backgroundColor: colors.secondary }]}>
+                  {channel.logo ? (
+                    <Image source={{ uri: channel.logo }} style={styles.logoImg} contentFit="contain" />
+                  ) : (
+                    <Feather name="tv" size={18} color={colors.mutedForeground} />
+                  )}
+                </View>
+
+                <TouchableOpacity
+                  style={styles.starColumn}
+                  onPress={() => {
+                    Haptics.selectionAsync();
+                    toggleFavorite(channel.id);
+                  }}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Feather
+                    name="star"
+                    size={22}
+                    color={isFav ? "#FFC107" : colors.mutedForeground}
+                    style={isFav ? { opacity: 1 } : { opacity: 0.4 }}
+                  />
+                </TouchableOpacity>
+
+                <View style={styles.info}>
+                  <Text style={[styles.name, { color: colors.foreground }]} numberOfLines={1}>
+                    {channel.name}
+                  </Text>
+                  {now ? (
+                    <Text style={[styles.program, { color: colors.mutedForeground }]} numberOfLines={1}>
+                      {now.title}
+                    </Text>
+                  ) : (
+                    <Text style={[styles.program, { color: colors.mutedForeground }]} numberOfLines={1}>
+                      {channel.group}
+                    </Text>
+                  )}
+                </View>
+              </View>
+            );
+          }
 
           return (
             <TouchableOpacity
@@ -203,7 +282,9 @@ export function ChannelList({
             <Feather name="tv" size={40} color={colors.mutedForeground} style={{ marginBottom: 12 }} />
             <Text style={[styles.emptyTitle, { color: colors.foreground }]}>No channels</Text>
             <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
-              Select a group or add a playlist
+              {manageFavoritesMode
+                ? "No channels in this group"
+                : "Select a group or add a playlist"}
             </Text>
           </View>
         }
@@ -221,6 +302,44 @@ export function ChannelList({
 }
 
 const styles = StyleSheet.create({
+  manageBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderBottomWidth: 2,
+  },
+  manageBannerText: {
+    flex: 1,
+    fontSize: 12,
+    fontFamily: "Inter_500Medium",
+  },
+  doneBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 6,
+  },
+  doneBtnText: {
+    color: "#fff",
+    fontSize: 12,
+    fontFamily: "Inter_600SemiBold",
+  },
+
+  manageItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: 8,
+  },
+  starColumn: {
+    width: 36,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
   item: {
     flexDirection: "row",
     alignItems: "center",

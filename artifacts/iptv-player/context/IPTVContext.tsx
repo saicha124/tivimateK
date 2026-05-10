@@ -70,6 +70,8 @@ interface IPTVContextValue {
   toggleHideChannel: (channelId: string) => void;
   hiddenGroups: string[];
   toggleHideGroup: (group: string) => void;
+  favoritesOnlyGroups: string[];
+  toggleFavoritesOnlyGroup: (group: string) => void;
   addPlaylist: (playlist: Omit<Playlist, "id" | "channels" | "movies" | "shows" | "lastUpdated">) => Promise<void>;
   removePlaylist: (id: string) => void;
   isLoading: boolean;
@@ -170,6 +172,7 @@ export function IPTVProvider({ children }: { children: React.ReactNode }) {
   const [blockedChannels, setBlockedChannels] = useState<string[]>([]);
   const [hiddenChannels, setHiddenChannels] = useState<string[]>([]);
   const [hiddenGroups, setHiddenGroups] = useState<string[]>([]);
+  const [favoritesOnlyGroups, setFavoritesOnlyGroups] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState("");
 
@@ -190,6 +193,8 @@ export function IPTVProvider({ children }: { children: React.ReactNode }) {
         if (hidden) setHiddenChannels(JSON.parse(hidden));
         const hiddenGrps = await AsyncStorage.getItem("hiddenGroups");
         if (hiddenGrps) setHiddenGroups(JSON.parse(hiddenGrps));
+        const favOnly = await AsyncStorage.getItem("favoritesOnlyGroups");
+        if (favOnly) setFavoritesOnlyGroups(JSON.parse(favOnly));
       } catch {}
     })();
   }, []);
@@ -236,6 +241,16 @@ export function IPTVProvider({ children }: { children: React.ReactNode }) {
         ? prev.filter((g) => g !== group)
         : [...prev, group];
       AsyncStorage.setItem("hiddenGroups", JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const toggleFavoritesOnlyGroup = useCallback(async (group: string) => {
+    setFavoritesOnlyGroups((prev) => {
+      const next = prev.includes(group)
+        ? prev.filter((g) => g !== group)
+        : [...prev, group];
+      AsyncStorage.setItem("favoritesOnlyGroups", JSON.stringify(next));
       return next;
     });
   }, []);
@@ -331,6 +346,8 @@ export function IPTVProvider({ children }: { children: React.ReactNode }) {
         toggleHideChannel,
         hiddenGroups,
         toggleHideGroup,
+        favoritesOnlyGroups,
+        toggleFavoritesOnlyGroup,
         addPlaylist,
         removePlaylist,
         isLoading,

@@ -21,6 +21,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { ChannelContextMenu } from "@/components/ChannelContextMenu";
 import { ProgramDetailsSheet } from "@/components/ProgramDetailsSheet";
 import { Channel, EPGProgram, useIPTV } from "@/context/IPTVContext";
 import { useColors } from "@/hooks/useColors";
@@ -205,6 +206,7 @@ export function EPGGrid({ onPlayChannel, onCatchUp }: EPGGridProps) {
 
   const [sheetChannel, setSheetChannel] = useState<Channel | null>(null);
   const [sheetProgram, setSheetProgram] = useState<EPGProgram | null>(null);
+  const [contextMenuChannel, setContextMenuChannel] = useState<Channel | null>(null);
 
   const syncScroll = useCallback((x: number, sourceId: string) => {
     if (isScrolling.current) return;
@@ -256,7 +258,10 @@ export function EPGGrid({ onPlayChannel, onCatchUp }: EPGGridProps) {
             },
           ]}
           onPress={() => { Haptics.selectionAsync(); setSelectedChannel(channel); }}
-          onLongPress={() => onPlayChannel(channel)}
+          onLongPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            setContextMenuChannel(channel);
+          }}
           activeOpacity={0.7}
         >
           <View style={[styles.logoContainer, { backgroundColor: colors.secondary }]}>
@@ -447,6 +452,14 @@ export function EPGGrid({ onPlayChannel, onCatchUp }: EPGGridProps) {
         onClose={() => { setSheetProgram(null); setSheetChannel(null); }}
         onWatchLive={onPlayChannel}
         onWatchCatchUp={onCatchUp}
+      />
+
+      <ChannelContextMenu
+        channel={contextMenuChannel}
+        visible={!!contextMenuChannel}
+        onClose={() => setContextMenuChannel(null)}
+        onPlay={onPlayChannel}
+        onCatchUp={onCatchUp}
       />
     </View>
   );
