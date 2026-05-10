@@ -94,6 +94,20 @@ export interface Recording {
   createdAt: number;
 }
 
+export interface ScheduledCustomRecording {
+  id: string;
+  channelId: string;
+  channelName: string;
+  channelLogo?: string;
+  startDate: string;
+  startTime: string;
+  durationHours: number;
+  durationMinutes: number;
+  repeat: "off" | "daily" | "weekly";
+  name: string;
+  createdAt: number;
+}
+
 export interface ProgramReminder {
   id: string;
   channelId: string;
@@ -148,6 +162,9 @@ interface IPTVContextValue {
   recordings: Recording[];
   scheduleRecording: (recording: Omit<Recording, "id" | "createdAt">) => void;
   cancelRecording: (id: string) => void;
+  scheduledCustomRecordings: ScheduledCustomRecording[];
+  addScheduledCustomRecording: (r: Omit<ScheduledCustomRecording, "id" | "createdAt">) => void;
+  removeScheduledCustomRecording: (id: string) => void;
   programReminders: ProgramReminder[];
   addProgramReminder: (reminder: Omit<ProgramReminder, "id" | "createdAt">) => void;
   removeProgramReminder: (id: string) => void;
@@ -256,6 +273,7 @@ export function IPTVProvider({ children }: { children: React.ReactNode }) {
   const [hiddenGroups, setHiddenGroups] = useState<string[]>([]);
   const [favoritesOnlyGroups, setFavoritesOnlyGroups] = useState<string[]>([]);
   const [recordings, setRecordings] = useState<Recording[]>([]);
+  const [scheduledCustomRecordings, setScheduledCustomRecordings] = useState<ScheduledCustomRecording[]>([]);
   const [programReminders, setProgramReminders] = useState<ProgramReminder[]>([]);
   const [watchHistory, setWatchHistory] = useState<WatchHistoryItem[]>([]);
   const [groupSortOrders, setGroupSortOrdersState] = useState<Record<string, GroupSortOrder>>({});
@@ -287,6 +305,8 @@ export function IPTVProvider({ children }: { children: React.ReactNode }) {
         if (favOnly) setFavoritesOnlyGroups(JSON.parse(favOnly));
         const recs = await AsyncStorage.getItem("recordings");
         if (recs) setRecordings(JSON.parse(recs));
+        const schedRecs = await AsyncStorage.getItem("scheduledCustomRecordings");
+        if (schedRecs) setScheduledCustomRecordings(JSON.parse(schedRecs));
         const progRems = await AsyncStorage.getItem("programReminders");
         if (progRems) setProgramReminders(JSON.parse(progRems));
         const hist = await AsyncStorage.getItem("watchHistory");
@@ -418,6 +438,25 @@ export function IPTVProvider({ children }: { children: React.ReactNode }) {
     setRecordings((prev) => {
       const next = prev.filter((r) => r.id !== id);
       AsyncStorage.setItem("recordings", JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const addScheduledCustomRecording = useCallback((r: Omit<ScheduledCustomRecording, "id" | "createdAt">) => {
+    setScheduledCustomRecordings((prev) => {
+      const next = [
+        ...prev,
+        { ...r, id: Date.now().toString() + Math.random().toString(36).substr(2, 6), createdAt: Date.now() },
+      ];
+      AsyncStorage.setItem("scheduledCustomRecordings", JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const removeScheduledCustomRecording = useCallback((id: string) => {
+    setScheduledCustomRecordings((prev) => {
+      const next = prev.filter((r) => r.id !== id);
+      AsyncStorage.setItem("scheduledCustomRecordings", JSON.stringify(next));
       return next;
     });
   }, []);
@@ -563,6 +602,9 @@ export function IPTVProvider({ children }: { children: React.ReactNode }) {
         recordings,
         scheduleRecording,
         cancelRecording,
+        scheduledCustomRecordings,
+        addScheduledCustomRecording,
+        removeScheduledCustomRecording,
         programReminders,
         addProgramReminder,
         removeProgramReminder,

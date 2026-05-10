@@ -20,6 +20,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useColors } from "@/hooks/useColors";
 import { useIPTV } from "@/context/IPTVContext";
+import { MultiviewScreen } from "@/components/MultiviewScreen";
 
 function formatTime(ms: number) {
   const totalSec = Math.floor(ms / 1000);
@@ -116,11 +117,13 @@ interface ToolbarItem {
 function PlayerToolbar({
   channelId,
   onClose,
+  onMultiview,
   colors,
   bottomPad,
 }: {
   channelId?: string;
   onClose: () => void;
+  onMultiview: () => void;
   colors: ReturnType<typeof useColors>;
   bottomPad: number;
 }) {
@@ -132,7 +135,7 @@ function PlayerToolbar({
     { icon: "search", label: "Search" },
     { icon: "list", label: "Channels list" },
     { icon: "circle", label: "Recordings" },
-    { icon: "layout", label: "Multiview" },
+    { icon: "layout", label: "Multiview", onPress: onMultiview },
     { icon: "maximize", label: "Picture-in-picture" },
     { icon: "monitor", label: "1280 × 720" },
     { icon: "volume-2", label: "Stereo" },
@@ -318,6 +321,7 @@ export default function PlayerScreen() {
   const [showControls, setShowControls] = useState(true);
   const [showToolbar, setShowToolbar] = useState(false);
   const [isBuffering, setIsBuffering] = useState(true);
+  const [showMultiview, setShowMultiview] = useState(false);
   const controlsTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const position: number = status?.positionMillis ?? 0;
@@ -523,6 +527,11 @@ export default function PlayerScreen() {
                 <PlayerToolbar
                   channelId={channelId}
                   onClose={() => setShowToolbar(false)}
+                  onMultiview={() => {
+                    setShowToolbar(false);
+                    setShowControls(false);
+                    setShowMultiview(true);
+                  }}
                   colors={colors}
                   bottomPad={bottomPad}
                 />
@@ -531,6 +540,17 @@ export default function PlayerScreen() {
           </View>
         </Animated.View>
       )}
+
+      <MultiviewScreen
+        visible={showMultiview}
+        initialChannelId={channelId}
+        initialChannelName={name ?? undefined}
+        initialChannelUrl={url ?? undefined}
+        onClose={() => {
+          setShowMultiview(false);
+          setShowControls(true);
+        }}
+      />
     </View>
   );
 }
