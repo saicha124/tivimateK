@@ -52,6 +52,22 @@ export interface Playlist {
 
 export type Section = "TV" | "Movies" | "Shows" | "My List" | "Recordings";
 
+export type GroupSortOrder = "playlist" | "name-asc" | "name-desc";
+
+export interface ReminderSettings {
+  remindBeforeMinutes: number;
+  popupTimeoutSecs: number;
+  defaultAction: "watch" | "dismiss";
+  wakeFromSleep: boolean;
+}
+
+export const DEFAULT_REMINDER_SETTINGS: ReminderSettings = {
+  remindBeforeMinutes: 1,
+  popupTimeoutSecs: 10,
+  defaultAction: "watch",
+  wakeFromSleep: false,
+};
+
 export interface Recording {
   id: string;
   channelId: string;
@@ -86,6 +102,14 @@ interface IPTVContextValue {
   toggleHideGroup: (group: string) => void;
   favoritesOnlyGroups: string[];
   toggleFavoritesOnlyGroup: (group: string) => void;
+  groupSortOrders: Record<string, GroupSortOrder>;
+  setGroupSortOrder: (group: string, order: GroupSortOrder) => void;
+  groupEpgOffsets: Record<string, number>;
+  setGroupEpgOffset: (group: string, offset: number) => void;
+  groupExternalPlayer: string[];
+  toggleGroupExternalPlayer: (group: string) => void;
+  reminderSettings: ReminderSettings;
+  updateReminderSettings: (patch: Partial<ReminderSettings>) => void;
   recordings: Recording[];
   scheduleRecording: (recording: Omit<Recording, "id" | "createdAt">) => void;
   cancelRecording: (id: string) => void;
@@ -191,6 +215,10 @@ export function IPTVProvider({ children }: { children: React.ReactNode }) {
   const [hiddenGroups, setHiddenGroups] = useState<string[]>([]);
   const [favoritesOnlyGroups, setFavoritesOnlyGroups] = useState<string[]>([]);
   const [recordings, setRecordings] = useState<Recording[]>([]);
+  const [groupSortOrders, setGroupSortOrdersState] = useState<Record<string, GroupSortOrder>>({});
+  const [groupEpgOffsets, setGroupEpgOffsetsState] = useState<Record<string, number>>({});
+  const [groupExternalPlayer, setGroupExternalPlayer] = useState<string[]>([]);
+  const [reminderSettings, setReminderSettings] = useState<ReminderSettings>(DEFAULT_REMINDER_SETTINGS);
   const [isLoading, setIsLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState("");
 
@@ -215,6 +243,14 @@ export function IPTVProvider({ children }: { children: React.ReactNode }) {
         if (favOnly) setFavoritesOnlyGroups(JSON.parse(favOnly));
         const recs = await AsyncStorage.getItem("recordings");
         if (recs) setRecordings(JSON.parse(recs));
+        const sortOrders = await AsyncStorage.getItem("groupSortOrders");
+        if (sortOrders) setGroupSortOrdersState(JSON.parse(sortOrders));
+        const epgOffsets = await AsyncStorage.getItem("groupEpgOffsets");
+        if (epgOffsets) setGroupEpgOffsetsState(JSON.parse(epgOffsets));
+        const extPlayer = await AsyncStorage.getItem("groupExternalPlayer");
+        if (extPlayer) setGroupExternalPlayer(JSON.parse(extPlayer));
+        const remSettings = await AsyncStorage.getItem("reminderSettings");
+        if (remSettings) setReminderSettings({ ...DEFAULT_REMINDER_SETTINGS, ...JSON.parse(remSettings) });
       } catch {}
     })();
   }, []);
@@ -271,6 +307,40 @@ export function IPTVProvider({ children }: { children: React.ReactNode }) {
         ? prev.filter((g) => g !== group)
         : [...prev, group];
       AsyncStorage.setItem("favoritesOnlyGroups", JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const setGroupSortOrder = useCallback((group: string, order: GroupSortOrder) => {
+    setGroupSortOrdersState((prev) => {
+      const next = { ...prev, [group]: order };
+      AsyncStorage.setItem("groupSortOrders", JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const setGroupEpgOffset = useCallback((group: string, offset: number) => {
+    setGroupEpgOffsetsState((prev) => {
+      const next = { ...prev, [group]: offset };
+      AsyncStorage.setItem("groupEpgOffsets", JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const toggleGroupExternalPlayer = useCallback((group: string) => {
+    setGroupExternalPlayer((prev) => {
+      const next = prev.includes(group)
+        ? prev.filter((g) => g !== group)
+        : [...prev, group];
+      AsyncStorage.setItem("groupExternalPlayer", JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const updateReminderSettings = useCallback((patch: Partial<ReminderSettings>) => {
+    setReminderSettings((prev) => {
+      const next = { ...prev, ...patch };
+      AsyncStorage.setItem("reminderSettings", JSON.stringify(next));
       return next;
     });
   }, []);
@@ -387,6 +457,14 @@ export function IPTVProvider({ children }: { children: React.ReactNode }) {
         toggleHideGroup,
         favoritesOnlyGroups,
         toggleFavoritesOnlyGroup,
+        groupSortOrders,
+        setGroupSortOrder,
+        groupEpgOffsets,
+        setGroupEpgOffset,
+        groupExternalPlayer,
+        toggleGroupExternalPlayer,
+        reminderSettings,
+        updateReminderSettings,
         recordings,
         scheduleRecording,
         cancelRecording,

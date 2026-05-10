@@ -8,6 +8,7 @@ import {
   ScrollView,
   StatusBar,
   StyleSheet,
+  Switch,
   Text,
   TouchableOpacity,
   View,
@@ -21,6 +22,17 @@ import { Playlist, useIPTV } from "@/context/IPTVContext";
 import { useParental } from "@/context/ParentalContext";
 import { useColors } from "@/hooks/useColors";
 
+type SettingsPage =
+  | "main"
+  | "playlists"
+  | "playback"
+  | "parental"
+  | "other"
+  | "reminders"
+  | "recording"
+  | "vod"
+  | "about";
+
 type PinFlow =
   | "setup-new"
   | "setup-confirm"
@@ -30,11 +42,85 @@ type PinFlow =
   | "lock-groups"
   | null;
 
+function SettingRow({
+  icon,
+  label,
+  value,
+  onPress,
+  rightEl,
+  last,
+  destructive,
+}: {
+  icon: string;
+  label: string;
+  value?: string;
+  onPress?: () => void;
+  rightEl?: React.ReactNode;
+  last?: boolean;
+  destructive?: boolean;
+}) {
+  const colors = useColors();
+  const content = (
+    <View
+      style={[
+        rowStyles.row,
+        {
+          borderBottomColor: colors.border,
+          borderBottomWidth: last ? 0 : StyleSheet.hairlineWidth,
+          backgroundColor: colors.card,
+        },
+      ]}
+    >
+      <View style={[rowStyles.iconWrap, { backgroundColor: destructive ? `${colors.destructive}20` : colors.secondary }]}>
+        <Feather name={icon as any} size={17} color={destructive ? colors.destructive : colors.mutedForeground} />
+      </View>
+      <View style={rowStyles.info}>
+        <Text style={[rowStyles.label, { color: destructive ? colors.destructive : colors.foreground }]}>{label}</Text>
+        {value !== undefined && (
+          <Text style={[rowStyles.value, { color: colors.mutedForeground }]}>{value}</Text>
+        )}
+      </View>
+      {rightEl !== undefined ? rightEl : onPress ? (
+        <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
+      ) : null}
+    </View>
+  );
+
+  if (onPress) {
+    return (
+      <TouchableOpacity onPress={onPress} activeOpacity={0.7}>
+        {content}
+      </TouchableOpacity>
+    );
+  }
+  return content;
+}
+
+const rowStyles = StyleSheet.create({
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 13,
+    gap: 12,
+  },
+  iconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  info: { flex: 1 },
+  label: { fontSize: 14, fontFamily: "Inter_500Medium" },
+  value: { fontSize: 12, fontFamily: "Inter_400Regular", marginTop: 2 },
+});
+
 export default function SettingsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { playlists, activePlaylist, setActivePlaylist, removePlaylist } = useIPTV();
+  const { playlists, activePlaylist, setActivePlaylist, removePlaylist, reminderSettings, updateReminderSettings } = useIPTV();
   const {
     isEnabled,
     hasPin,
@@ -46,6 +132,7 @@ export default function SettingsScreen() {
     lockAllSession,
   } = useParental();
 
+  const [page, setPage] = useState<SettingsPage>("main");
   const [showAddPlaylist, setShowAddPlaylist] = useState(false);
   const [showGroupLock, setShowGroupLock] = useState(false);
   const [pinFlow, setPinFlow] = useState<PinFlow>(null);
@@ -72,7 +159,6 @@ export default function SettingsScreen() {
     );
   };
 
-  // PIN flow title/subtitle helpers
   const pinTitle = () => {
     if (pinFlow === "setup-new") return "Set Parental PIN";
     if (pinFlow === "setup-confirm") return "Confirm PIN";
@@ -94,260 +180,373 @@ export default function SettingsScreen() {
   };
 
   const handlePinVerify = async (pin: string): Promise<boolean> => {
-    if (pinFlow === "setup-new") {
-      setNewPinBuffer(pin);
-      setPinFlow("setup-confirm");
-      return true; // accepted, moving to confirm step
-    }
+    if (pinFlow === "setup-new") { setNewPinBuffer(pin); setPinFlow("setup-confirm"); return true; }
     if (pinFlow === "setup-confirm") {
-      if (pin === newPinBuffer) {
-        return true;
-      }
-      setNewPinBuffer("");
-      setPinFlow("setup-new");
-      return false;
+      if (pin === newPinBuffer) return true;
+      setNewPinBuffer(""); setPinFlow("setup-new"); return false;
     }
-    if (pinFlow === "disable") {
-      return disableControls(pin);
-    }
+    if (pinFlow === "disable") return disableControls(pin);
     if (pinFlow === "change-old") {
       const ok = await verifyPin(pin);
-      if (ok) {
-        setNewPinBuffer(pin);
-        setPinFlow("change-new");
-        return true;
-      }
+      if (ok) { setNewPinBuffer(pin); setPinFlow("change-new"); return true; }
       return false;
     }
-    if (pinFlow === "change-new") {
-      await changePin(newPinBuffer, pin);
-      return true;
-    }
-    if (pinFlow === "lock-groups") {
-      return verifyPin(pin);
-    }
+    if (pinFlow === "change-new") { await changePin(newPinBuffer, pin); return true; }
+    if (pinFlow === "lock-groups") return verifyPin(pin);
     return false;
   };
 
   const handlePinSuccess = async () => {
     if (pinFlow === "setup-confirm") {
       await enableControls(newPinBuffer);
-      setNewPinBuffer("");
-      setPinFlow(null);
-      Alert.alert("Parental Controls Enabled", "Your PIN has been set. Locked groups will require this PIN.");
+      setNewPinBuffer(""); setPinFlow(null);
+      Alert.alert("Parental Controls Enabled", "Your PIN has been set.");
     } else if (pinFlow === "disable") {
       setPinFlow(null);
     } else if (pinFlow === "change-old") {
-      // stay in flow (moved to change-new)
+      // stay in flow
     } else if (pinFlow === "change-new") {
-      setNewPinBuffer("");
-      setPinFlow(null);
+      setNewPinBuffer(""); setPinFlow(null);
       Alert.alert("PIN Changed", "Your parental control PIN has been updated.");
     } else if (pinFlow === "lock-groups") {
-      setPinFlow(null);
-      setShowGroupLock(true);
+      setPinFlow(null); setShowGroupLock(true);
     } else {
       setPinFlow(null);
     }
   };
 
   const openGroupLockManager = () => {
-    if (hasPin) {
-      setPinFlow("lock-groups");
-    } else {
-      setShowGroupLock(true);
-    }
+    if (hasPin) setPinFlow("lock-groups");
+    else setShowGroupLock(true);
+  };
+
+  const goBack = () => {
+    Haptics.selectionAsync();
+    if (page === "reminders" || page === "recording" || page === "vod") setPage("other");
+    else if (page !== "main") setPage("main");
+    else router.back();
+  };
+
+  const pageTitle = () => {
+    if (page === "main") return "Settings";
+    if (page === "playlists") return "Playlists";
+    if (page === "playback") return "Playback";
+    if (page === "parental") return "Parental controls";
+    if (page === "other") return "Other";
+    if (page === "reminders") return "Reminders";
+    if (page === "recording") return "Recording";
+    if (page === "vod") return "VOD";
+    if (page === "about") return "About";
+    return "Settings";
+  };
+
+  const renderMain = () => (
+    <ScrollView contentContainerStyle={{ paddingBottom: bottomPad + 16, paddingTop: 8 }}>
+      <View style={[styles.section, { borderColor: colors.border, backgroundColor: colors.card }]}>
+        <SettingRow icon="list" label="Playlists" value={`${playlists.length} playlist${playlists.length !== 1 ? "s" : ""}`} onPress={() => { Haptics.selectionAsync(); setPage("playlists"); }} />
+        <SettingRow icon="play-circle" label="Playback" onPress={() => { Haptics.selectionAsync(); setPage("playback"); }} />
+        <SettingRow icon="shield" label="Parental controls" value={isEnabled ? `${lockedGroups.length} group${lockedGroups.length !== 1 ? "s" : ""} locked` : "Off"} onPress={() => { Haptics.selectionAsync(); setPage("parental"); }} />
+        <SettingRow icon="more-horizontal" label="Other" onPress={() => { Haptics.selectionAsync(); setPage("other"); }} />
+        <SettingRow icon="info" label="About" onPress={() => { Haptics.selectionAsync(); setPage("about"); }} last />
+      </View>
+    </ScrollView>
+  );
+
+  const renderPlaylists = () => (
+    <ScrollView contentContainerStyle={{ paddingBottom: bottomPad + 16, paddingTop: 8 }}>
+      {playlists.length === 0 ? (
+        <View style={styles.emptyContainer}>
+          <Feather name="list" size={40} color={colors.mutedForeground} style={{ opacity: 0.4 }} />
+          <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>No playlists added</Text>
+        </View>
+      ) : (
+        <View style={{ paddingHorizontal: 16, gap: 10 }}>
+          {playlists.map((playlist) => {
+            const isActive = activePlaylist?.id === playlist.id;
+            return (
+              <View
+                key={playlist.id}
+                style={[styles.playlistItem, { backgroundColor: isActive ? `${colors.primary}18` : colors.card, borderColor: isActive ? colors.primary : colors.border }]}
+              >
+                <TouchableOpacity style={styles.playlistMain} onPress={() => setActivePlaylist(playlist)} activeOpacity={0.7}>
+                  <View style={[styles.playlistIcon, { backgroundColor: colors.secondary }]}>
+                    <Feather
+                      name={playlist.type === "M3U" ? "link" : playlist.type === "XtreamCodes" ? "log-in" : "server"}
+                      size={18}
+                      color={isActive ? colors.primary : colors.mutedForeground}
+                    />
+                  </View>
+                  <View style={styles.playlistInfo}>
+                    <Text style={[styles.playlistName, { color: isActive ? colors.primary : colors.foreground }]} numberOfLines={1}>
+                      {playlist.name}
+                    </Text>
+                    <Text style={[styles.playlistMeta, { color: colors.mutedForeground }]}>
+                      {playlist.type} · {playlist.channels.length} channels · {playlist.movies.length} movies
+                    </Text>
+                  </View>
+                  {isActive && <Feather name="check-circle" size={18} color={colors.primary} />}
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => handleRemove(playlist)} style={[styles.removeBtn, { borderLeftColor: colors.border }]}>
+                  <Feather name="trash-2" size={18} color={colors.destructive} />
+                </TouchableOpacity>
+              </View>
+            );
+          })}
+        </View>
+      )}
+      <TouchableOpacity
+        onPress={() => setShowAddPlaylist(true)}
+        style={[styles.addBtn, { backgroundColor: colors.primary, marginHorizontal: 16, marginTop: 12 }]}
+        activeOpacity={0.85}
+      >
+        <Feather name="plus" size={18} color="#fff" />
+        <Text style={styles.addBtnText}>Add Playlist</Text>
+      </TouchableOpacity>
+    </ScrollView>
+  );
+
+  const renderPlayback = () => (
+    <ScrollView contentContainerStyle={{ paddingBottom: bottomPad + 16, paddingTop: 8 }}>
+      <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>VIDEO</Text>
+      <View style={[styles.section, { borderColor: colors.border, backgroundColor: colors.card }]}>
+        <SettingRow icon="monitor" label="Video decoder" value="Auto" onPress={() => {}} />
+        <SettingRow icon="zap" label="Hardware acceleration" value="Auto" onPress={() => {}} />
+        <SettingRow icon="maximize" label="Aspect ratio" value="Auto fit" onPress={() => {}} last />
+      </View>
+      <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>AUDIO</Text>
+      <View style={[styles.section, { borderColor: colors.border, backgroundColor: colors.card }]}>
+        <SettingRow icon="volume-2" label="Audio track" value="Default" onPress={() => {}} />
+        <SettingRow icon="headphones" label="Audio boost" value="Off" onPress={() => {}} last />
+      </View>
+      <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>SUBTITLES</Text>
+      <View style={[styles.section, { borderColor: colors.border, backgroundColor: colors.card }]}>
+        <SettingRow icon="type" label="Subtitle track" value="None" onPress={() => {}} />
+        <SettingRow icon="font" label="Subtitle size" value="Medium" onPress={() => {}} last />
+      </View>
+    </ScrollView>
+  );
+
+  const renderParental = () => (
+    <ScrollView contentContainerStyle={{ paddingBottom: bottomPad + 16, paddingTop: 8 }}>
+      <View style={[styles.section, { borderColor: colors.border, backgroundColor: colors.card }]}>
+        <View style={rowStyles.row}>
+          <View style={[rowStyles.iconWrap, { backgroundColor: isEnabled ? `${colors.destructive}20` : colors.secondary }]}>
+            <Feather name={isEnabled ? "shield" : "shield-off"} size={17} color={isEnabled ? colors.destructive : colors.mutedForeground} />
+          </View>
+          <View style={rowStyles.info}>
+            <Text style={[rowStyles.label, { color: colors.foreground }]}>
+              {isEnabled ? "Controls enabled" : "Controls disabled"}
+            </Text>
+            <Text style={[rowStyles.value, { color: colors.mutedForeground }]}>
+              {isEnabled ? `${lockedGroups.length} group${lockedGroups.length !== 1 ? "s" : ""} locked with PIN` : "Set a PIN to restrict access"}
+            </Text>
+          </View>
+          <TouchableOpacity
+            onPress={() => { Haptics.selectionAsync(); isEnabled ? setPinFlow("disable") : setPinFlow("setup-new"); }}
+            style={[styles.toggleBtn, { backgroundColor: isEnabled ? colors.destructive : colors.primary }]}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.toggleBtnText}>{isEnabled ? "Disable" : "Enable"}</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {isEnabled && (
+        <View style={[styles.section, { borderColor: colors.border, backgroundColor: colors.card, marginTop: 12 }]}>
+          <SettingRow icon="lock" label="Manage locked groups" value={`${lockedGroups.length} group${lockedGroups.length !== 1 ? "s" : ""} locked`} onPress={openGroupLockManager} />
+          <SettingRow icon="key" label="Change PIN" onPress={() => { Haptics.selectionAsync(); setPinFlow("change-old"); }} />
+          <SettingRow icon="lock" label="Lock all now" onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); lockAllSession(); Alert.alert("Session Locked", "All temporarily unlocked groups have been re-locked."); }} destructive last />
+        </View>
+      )}
+    </ScrollView>
+  );
+
+  const renderOther = () => (
+    <ScrollView contentContainerStyle={{ paddingBottom: bottomPad + 16, paddingTop: 8 }}>
+      <View style={[styles.section, { borderColor: colors.border, backgroundColor: colors.card }]}>
+        <SettingRow icon="bell" label="Reminders" onPress={() => { Haptics.selectionAsync(); setPage("reminders"); }} />
+        <SettingRow icon="video" label="Recording" onPress={() => { Haptics.selectionAsync(); setPage("recording"); }} />
+        <SettingRow icon="film" label="VOD" onPress={() => { Haptics.selectionAsync(); setPage("vod"); }} last />
+      </View>
+    </ScrollView>
+  );
+
+  const renderReminders = () => (
+    <ScrollView contentContainerStyle={{ paddingBottom: bottomPad + 16, paddingTop: 8 }}>
+      <View style={[styles.section, { borderColor: colors.border, backgroundColor: colors.card }]}>
+        {/* Remind before program start */}
+        <View style={[rowStyles.row, { borderBottomColor: colors.border, borderBottomWidth: StyleSheet.hairlineWidth }]}>
+          <View style={[rowStyles.iconWrap, { backgroundColor: colors.secondary }]}>
+            <Feather name="clock" size={17} color={colors.mutedForeground} />
+          </View>
+          <View style={rowStyles.info}>
+            <Text style={[rowStyles.label, { color: colors.foreground }]}>Remind before program start, min</Text>
+            <Text style={[rowStyles.value, { color: colors.mutedForeground }]}>{reminderSettings.remindBeforeMinutes}</Text>
+          </View>
+          <View style={styles.stepper}>
+            <TouchableOpacity
+              style={[styles.stepBtn, { backgroundColor: colors.secondary, borderColor: colors.border }]}
+              onPress={() => { Haptics.selectionAsync(); updateReminderSettings({ remindBeforeMinutes: Math.max(1, reminderSettings.remindBeforeMinutes - 1) }); }}
+              activeOpacity={0.7}
+            >
+              <Feather name="minus" size={13} color={colors.foreground} />
+            </TouchableOpacity>
+            <Text style={[styles.stepValue, { color: colors.foreground }]}>{reminderSettings.remindBeforeMinutes}</Text>
+            <TouchableOpacity
+              style={[styles.stepBtn, { backgroundColor: colors.secondary, borderColor: colors.border }]}
+              onPress={() => { Haptics.selectionAsync(); updateReminderSettings({ remindBeforeMinutes: Math.min(60, reminderSettings.remindBeforeMinutes + 1) }); }}
+              activeOpacity={0.7}
+            >
+              <Feather name="plus" size={13} color={colors.foreground} />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Popup timeout */}
+        <View style={[rowStyles.row, { borderBottomColor: colors.border, borderBottomWidth: StyleSheet.hairlineWidth }]}>
+          <View style={[rowStyles.iconWrap, { backgroundColor: colors.secondary }]}>
+            <Feather name="alert-circle" size={17} color={colors.mutedForeground} />
+          </View>
+          <View style={rowStyles.info}>
+            <Text style={[rowStyles.label, { color: colors.foreground }]}>Popup timeout, sec</Text>
+            <Text style={[rowStyles.value, { color: colors.mutedForeground }]}>{reminderSettings.popupTimeoutSecs}</Text>
+          </View>
+          <View style={styles.stepper}>
+            <TouchableOpacity
+              style={[styles.stepBtn, { backgroundColor: colors.secondary, borderColor: colors.border }]}
+              onPress={() => { Haptics.selectionAsync(); updateReminderSettings({ popupTimeoutSecs: Math.max(5, reminderSettings.popupTimeoutSecs - 5) }); }}
+              activeOpacity={0.7}
+            >
+              <Feather name="minus" size={13} color={colors.foreground} />
+            </TouchableOpacity>
+            <Text style={[styles.stepValue, { color: colors.foreground }]}>{reminderSettings.popupTimeoutSecs}</Text>
+            <TouchableOpacity
+              style={[styles.stepBtn, { backgroundColor: colors.secondary, borderColor: colors.border }]}
+              onPress={() => { Haptics.selectionAsync(); updateReminderSettings({ popupTimeoutSecs: Math.min(60, reminderSettings.popupTimeoutSecs + 5) }); }}
+              activeOpacity={0.7}
+            >
+              <Feather name="plus" size={13} color={colors.foreground} />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Default action */}
+        <View style={[rowStyles.row, { borderBottomColor: colors.border, borderBottomWidth: StyleSheet.hairlineWidth }]}>
+          <View style={[rowStyles.iconWrap, { backgroundColor: colors.secondary }]}>
+            <Feather name="play" size={17} color={colors.mutedForeground} />
+          </View>
+          <View style={rowStyles.info}>
+            <Text style={[rowStyles.label, { color: colors.foreground }]}>Default action</Text>
+            <Text style={[rowStyles.value, { color: colors.mutedForeground }]}>
+              {reminderSettings.defaultAction === "watch" ? "Watch" : "Dismiss"}
+            </Text>
+          </View>
+          <View style={{ flexDirection: "row", gap: 6 }}>
+            {(["watch", "dismiss"] as const).map((action) => (
+              <TouchableOpacity
+                key={action}
+                style={[
+                  styles.actionChip,
+                  {
+                    backgroundColor: reminderSettings.defaultAction === action ? colors.primary : colors.secondary,
+                    borderColor: reminderSettings.defaultAction === action ? colors.primary : colors.border,
+                  },
+                ]}
+                onPress={() => { Haptics.selectionAsync(); updateReminderSettings({ defaultAction: action }); }}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.actionChipText, { color: reminderSettings.defaultAction === action ? "#fff" : colors.mutedForeground }]}>
+                  {action === "watch" ? "Watch" : "Dismiss"}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
+        {/* Wake from sleep */}
+        <View style={rowStyles.row}>
+          <View style={[rowStyles.iconWrap, { backgroundColor: colors.secondary }]}>
+            <Feather name="moon" size={17} color={colors.mutedForeground} />
+          </View>
+          <View style={rowStyles.info}>
+            <Text style={[rowStyles.label, { color: colors.foreground }]}>Wake up from sleep mode</Text>
+            <Text style={[rowStyles.value, { color: colors.mutedForeground }]}>May not work on all devices</Text>
+          </View>
+          <Switch
+            value={reminderSettings.wakeFromSleep}
+            onValueChange={(v) => { Haptics.selectionAsync(); updateReminderSettings({ wakeFromSleep: v }); }}
+            trackColor={{ false: colors.border, true: `${colors.primary}80` }}
+            thumbColor={reminderSettings.wakeFromSleep ? colors.primary : colors.mutedForeground}
+            ios_backgroundColor={colors.border}
+          />
+        </View>
+      </View>
+    </ScrollView>
+  );
+
+  const renderRecording = () => (
+    <ScrollView contentContainerStyle={{ paddingBottom: bottomPad + 16, paddingTop: 8 }}>
+      <View style={[styles.section, { borderColor: colors.border, backgroundColor: colors.card }]}>
+        <SettingRow icon="folder" label="Storage location" value="Default" onPress={() => {}} />
+        <SettingRow icon="hard-drive" label="Max storage" value="Unlimited" onPress={() => {}} last />
+      </View>
+      <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>BEHAVIOUR</Text>
+      <View style={[styles.section, { borderColor: colors.border, backgroundColor: colors.card }]}>
+        <SettingRow icon="alert-triangle" label="Record overlap before, sec" value="0" onPress={() => {}} />
+        <SettingRow icon="alert-triangle" label="Record overlap after, sec" value="0" onPress={() => {}} last />
+      </View>
+    </ScrollView>
+  );
+
+  const renderVOD = () => (
+    <ScrollView contentContainerStyle={{ paddingBottom: bottomPad + 16, paddingTop: 8 }}>
+      <View style={[styles.section, { borderColor: colors.border, backgroundColor: colors.card }]}>
+        <SettingRow icon="film" label="Default quality" value="Auto" onPress={() => {}} />
+        <SettingRow icon="download" label="Download location" value="Default" onPress={() => {}} />
+        <SettingRow icon="wifi" label="Stream over Wi-Fi only" rightEl={<Switch value={false} onValueChange={() => {}} trackColor={{ false: "#555", true: "#4e9af1" }} />} last />
+      </View>
+    </ScrollView>
+  );
+
+  const renderAbout = () => (
+    <ScrollView contentContainerStyle={{ paddingBottom: bottomPad + 16, paddingTop: 8 }}>
+      <View style={[styles.section, { borderColor: colors.border, backgroundColor: colors.card }]}>
+        <SettingRow icon="package" label="App version" value="1.0.0" last={false} />
+        <SettingRow icon="code" label="Supported formats" value="M3U, Xtream Codes, Stalker Portal" last={false} />
+        <SettingRow icon="globe" label="Website" value="tivimate.com" last />
+      </View>
+    </ScrollView>
+  );
+
+  const renderPage = () => {
+    if (page === "main") return renderMain();
+    if (page === "playlists") return renderPlaylists();
+    if (page === "playback") return renderPlayback();
+    if (page === "parental") return renderParental();
+    if (page === "other") return renderOther();
+    if (page === "reminders") return renderReminders();
+    if (page === "recording") return renderRecording();
+    if (page === "vod") return renderVOD();
+    if (page === "about") return renderAbout();
+    return null;
   };
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <StatusBar barStyle="light-content" backgroundColor={colors.background} />
 
-      <View
-        style={[
-          styles.header,
-          { paddingTop: topPad + 8, backgroundColor: colors.card, borderBottomColor: colors.border },
-        ]}
-      >
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+      <View style={[styles.header, { paddingTop: topPad + 8, backgroundColor: colors.card, borderBottomColor: colors.border }]}>
+        <TouchableOpacity onPress={goBack} style={styles.backBtn}>
           <Feather name="arrow-left" size={22} color={colors.foreground} />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: colors.foreground }]}>Settings</Text>
+        <Text style={[styles.headerTitle, { color: colors.foreground }]}>{pageTitle()}</Text>
         <View style={{ width: 36 }} />
       </View>
 
-      <ScrollView contentContainerStyle={{ paddingBottom: bottomPad + 16 }}>
-        {/* Playlists */}
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>PLAYLISTS</Text>
-          {playlists.length === 0 ? (
-            <View style={styles.emptyRow}>
-              <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>No playlists added</Text>
-            </View>
-          ) : (
-            playlists.map((playlist) => {
-              const isActive = activePlaylist?.id === playlist.id;
-              return (
-                <View
-                  key={playlist.id}
-                  style={[styles.playlistItem, { backgroundColor: isActive ? colors.highlight : colors.card, borderColor: colors.border }]}
-                >
-                  <TouchableOpacity style={styles.playlistMain} onPress={() => setActivePlaylist(playlist)} activeOpacity={0.7}>
-                    <View style={[styles.playlistIcon, { backgroundColor: colors.secondary }]}>
-                      <Feather
-                        name={playlist.type === "M3U" ? "link" : playlist.type === "XtreamCodes" ? "log-in" : "server"}
-                        size={18}
-                        color={isActive ? colors.primary : colors.mutedForeground}
-                      />
-                    </View>
-                    <View style={styles.playlistInfo}>
-                      <Text style={[styles.playlistName, { color: isActive ? colors.primary : colors.foreground }]} numberOfLines={1}>
-                        {playlist.name}
-                      </Text>
-                      <Text style={[styles.playlistMeta, { color: colors.mutedForeground }]}>
-                        {playlist.type} · {playlist.channels.length} channels · {playlist.movies.length} movies
-                      </Text>
-                    </View>
-                    {isActive && <Feather name="check-circle" size={18} color={colors.primary} />}
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={() => handleRemove(playlist)} style={[styles.removeBtn, { borderLeftColor: colors.border }]}>
-                    <Feather name="trash-2" size={18} color={colors.destructive} />
-                  </TouchableOpacity>
-                </View>
-              );
-            })
-          )}
-          <TouchableOpacity
-            onPress={() => setShowAddPlaylist(true)}
-            style={[styles.addBtn, { backgroundColor: colors.primary }]}
-            activeOpacity={0.85}
-          >
-            <Feather name="plus" size={18} color="#fff" />
-            <Text style={styles.addBtnText}>Add Playlist</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Parental Controls */}
-        <View style={[styles.section, { marginTop: 8 }]}>
-          <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>PARENTAL CONTROLS</Text>
-
-          {/* Enable/Disable toggle row */}
-          <View style={[styles.settingCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <View style={[styles.settingIconBg, { backgroundColor: isEnabled ? `${colors.destructive}25` : colors.secondary }]}>
-              <Feather name={isEnabled ? "shield" : "shield-off"} size={18} color={isEnabled ? colors.destructive : colors.mutedForeground} />
-            </View>
-            <View style={styles.settingInfo}>
-              <Text style={[styles.settingLabel, { color: colors.foreground }]}>
-                {isEnabled ? "Controls Enabled" : "Controls Disabled"}
-              </Text>
-              <Text style={[styles.settingDesc, { color: colors.mutedForeground }]}>
-                {isEnabled
-                  ? `${lockedGroups.length} group${lockedGroups.length !== 1 ? "s" : ""} locked with PIN`
-                  : "Set a PIN to restrict access to content"}
-              </Text>
-            </View>
-            <TouchableOpacity
-              onPress={() => {
-                Haptics.selectionAsync();
-                if (isEnabled) {
-                  setPinFlow("disable");
-                } else {
-                  setPinFlow("setup-new");
-                }
-              }}
-              style={[
-                styles.toggleButton,
-                { backgroundColor: isEnabled ? colors.destructive : colors.primary },
-              ]}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.toggleButtonText}>{isEnabled ? "Disable" : "Enable"}</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Manage locked groups */}
-          {isEnabled && (
-            <>
-              <TouchableOpacity
-                onPress={openGroupLockManager}
-                style={[styles.settingRow, { borderBottomColor: colors.border, backgroundColor: colors.card }]}
-                activeOpacity={0.7}
-              >
-                <View style={[styles.settingIconBg, { backgroundColor: colors.secondary }]}>
-                  <Feather name="lock" size={18} color={colors.mutedForeground} />
-                </View>
-                <View style={styles.settingInfo}>
-                  <Text style={[styles.settingLabel, { color: colors.foreground }]}>Manage Locked Groups</Text>
-                  <Text style={[styles.settingDesc, { color: colors.mutedForeground }]}>
-                    Choose which channel groups are PIN-protected
-                  </Text>
-                </View>
-                <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                onPress={() => { Haptics.selectionAsync(); setPinFlow("change-old"); }}
-                style={[styles.settingRow, { borderBottomColor: colors.border, backgroundColor: colors.card }]}
-                activeOpacity={0.7}
-              >
-                <View style={[styles.settingIconBg, { backgroundColor: colors.secondary }]}>
-                  <Feather name="key" size={18} color={colors.mutedForeground} />
-                </View>
-                <View style={styles.settingInfo}>
-                  <Text style={[styles.settingLabel, { color: colors.foreground }]}>Change PIN</Text>
-                  <Text style={[styles.settingDesc, { color: colors.mutedForeground }]}>
-                    Update your parental control PIN
-                  </Text>
-                </View>
-                <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                  lockAllSession();
-                  Alert.alert("Session Locked", "All temporarily unlocked groups have been re-locked.");
-                }}
-                style={[styles.settingRow, { borderBottomColor: "transparent", backgroundColor: colors.card }]}
-                activeOpacity={0.7}
-              >
-                <View style={[styles.settingIconBg, { backgroundColor: `${colors.destructive}20` }]}>
-                  <Feather name="lock" size={18} color={colors.destructive} />
-                </View>
-                <View style={styles.settingInfo}>
-                  <Text style={[styles.settingLabel, { color: colors.destructive }]}>Lock All Now</Text>
-                  <Text style={[styles.settingDesc, { color: colors.mutedForeground }]}>
-                    Re-lock any temporarily unlocked groups
-                  </Text>
-                </View>
-                <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
-              </TouchableOpacity>
-            </>
-          )}
-        </View>
-
-        {/* About */}
-        <View style={[styles.section, { marginTop: 8 }]}>
-          <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>ABOUT</Text>
-          {[
-            { label: "App Version", value: "1.0.0" },
-            { label: "Supported Formats", value: "M3U, Xtream Codes, Stalker Portal" },
-          ].map((item, i, arr) => (
-            <View
-              key={item.label}
-              style={[styles.infoItem, { borderBottomColor: i < arr.length - 1 ? colors.border : "transparent", backgroundColor: colors.card }]}
-            >
-              <Text style={[styles.infoLabel, { color: colors.foreground }]}>{item.label}</Text>
-              <Text style={[styles.infoValue, { color: colors.mutedForeground }]}>{item.value}</Text>
-            </View>
-          ))}
-        </View>
-      </ScrollView>
+      {renderPage()}
 
       <AddPlaylistWizard visible={showAddPlaylist} onClose={() => setShowAddPlaylist(false)} />
-
       <GroupLockModal visible={showGroupLock} onClose={() => setShowGroupLock(false)} />
-
       <PinPad
         visible={!!pinFlow}
         title={pinTitle()}
@@ -372,21 +571,29 @@ const styles = StyleSheet.create({
   },
   backBtn: { width: 36, height: 36, justifyContent: "center", alignItems: "center" },
   headerTitle: { fontSize: 17, fontFamily: "Inter_600SemiBold" },
-  section: { paddingTop: 20, paddingHorizontal: 16, paddingBottom: 8 },
-  sectionTitle: {
+  sectionLabel: {
     fontSize: 10,
     letterSpacing: 1.5,
     fontFamily: "Inter_600SemiBold",
-    marginBottom: 12,
+    marginBottom: 6,
+    marginTop: 16,
+    marginHorizontal: 16,
+    textTransform: "uppercase",
   },
-  emptyRow: { paddingVertical: 16, alignItems: "center" },
+  section: {
+    marginHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    overflow: "hidden",
+    marginTop: 8,
+  },
+  emptyContainer: { alignItems: "center", paddingTop: 60, gap: 12 },
   emptyText: { fontSize: 14, fontFamily: "Inter_400Regular" },
   playlistItem: {
     flexDirection: "row",
     alignItems: "center",
     borderRadius: 10,
     borderWidth: 1,
-    marginBottom: 10,
     overflow: "hidden",
   },
   playlistMain: {
@@ -420,53 +627,30 @@ const styles = StyleSheet.create({
     gap: 8,
     height: 48,
     borderRadius: 10,
-    marginTop: 8,
   },
   addBtnText: { color: "#fff", fontSize: 15, fontFamily: "Inter_600SemiBold" },
-  settingCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    padding: 14,
-    borderRadius: 12,
+  toggleBtn: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 8 },
+  toggleBtnText: { color: "#fff", fontSize: 13, fontFamily: "Inter_600SemiBold" },
+  stepper: { flexDirection: "row", alignItems: "center", gap: 6 },
+  stepBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 8,
     borderWidth: 1,
-    marginBottom: 8,
-  },
-  settingRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    padding: 14,
-    borderRadius: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    marginBottom: 4,
-  },
-  settingIconBg: {
-    width: 38,
-    height: 38,
-    borderRadius: 10,
     justifyContent: "center",
     alignItems: "center",
   },
-  settingInfo: { flex: 1 },
-  settingLabel: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
-  settingDesc: { fontSize: 11, fontFamily: "Inter_400Regular", marginTop: 2, lineHeight: 15 },
-  toggleButton: {
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 8,
+  stepValue: {
+    fontSize: 14,
+    fontFamily: "Inter_600SemiBold",
+    minWidth: 28,
+    textAlign: "center",
   },
-  toggleButtonText: { color: "#fff", fontSize: 13, fontFamily: "Inter_600SemiBold" },
-  infoItem: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+  actionChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     borderRadius: 8,
-    marginBottom: 4,
+    borderWidth: 1,
   },
-  infoLabel: { fontSize: 14, fontFamily: "Inter_500Medium" },
-  infoValue: { fontSize: 13, fontFamily: "Inter_400Regular", flex: 1, textAlign: "right", marginLeft: 8 },
+  actionChipText: { fontSize: 12, fontFamily: "Inter_500Medium" },
 });
