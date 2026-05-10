@@ -13,7 +13,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ChannelContextMenu } from "@/components/ChannelContextMenu";
-import { Channel, VODItem, useIPTV } from "@/context/IPTVContext";
+import { Channel, EPGProgram, VODItem, useIPTV } from "@/context/IPTVContext";
 import { useColors } from "@/hooks/useColors";
 
 function nowProgram(channel: Channel) {
@@ -35,7 +35,13 @@ function progress(channel: Channel) {
   return Math.min(1, Math.max(0, elapsed / dur));
 }
 
-export function ChannelList({ onPlayChannel }: { onPlayChannel: (channel: Channel) => void }) {
+export function ChannelList({
+  onPlayChannel,
+  onCatchUp,
+}: {
+  onPlayChannel: (channel: Channel) => void;
+  onCatchUp: (channel: Channel, program: EPGProgram) => void;
+}) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const {
@@ -208,6 +214,7 @@ export function ChannelList({ onPlayChannel }: { onPlayChannel: (channel: Channe
         visible={!!contextChannel}
         onClose={() => setContextChannel(null)}
         onPlay={onPlayChannel}
+        onCatchUp={onCatchUp}
       />
     </>
   );

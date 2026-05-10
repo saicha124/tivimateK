@@ -1,6 +1,6 @@
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import React from "react";
+import React, { useState } from "react";
 import {
   Modal,
   Platform,
@@ -13,7 +13,8 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { Channel, useIPTV } from "@/context/IPTVContext";
+import { CatchUpSheet } from "@/components/CatchUpSheet";
+import { Channel, EPGProgram, useIPTV } from "@/context/IPTVContext";
 import { useColors } from "@/hooks/useColors";
 
 interface ChannelContextMenuProps {
@@ -21,6 +22,7 @@ interface ChannelContextMenuProps {
   visible: boolean;
   onClose: () => void;
   onPlay: (channel: Channel) => void;
+  onCatchUp: (channel: Channel, program: EPGProgram) => void;
 }
 
 interface MenuOption {
@@ -31,16 +33,18 @@ interface MenuOption {
   dividerBefore?: boolean;
 }
 
-export function ChannelContextMenu({ channel, visible, onClose, onPlay }: ChannelContextMenuProps) {
+export function ChannelContextMenu({ channel, visible, onClose, onPlay, onCatchUp }: ChannelContextMenuProps) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { favorites, toggleFavorite, blockedChannels, toggleBlockChannel, hiddenChannels, toggleHideChannel } = useIPTV();
+  const [showCatchUp, setShowCatchUp] = useState(false);
 
   if (!channel) return null;
 
   const isFav = favorites.includes(channel.id);
   const isBlocked = blockedChannels.includes(channel.id);
   const isHidden = hiddenChannels.includes(channel.id);
+  const hasCatchUp = (channel.epg ?? []).some((p) => p.startTime < Date.now());
 
   const options: MenuOption[] = [
     {
@@ -53,31 +57,34 @@ export function ChannelContextMenu({ channel, visible, onClose, onPlay }: Channe
       },
     },
     {
-      label: "Open in external player",
-      icon: "external-link",
+      label: "Catch-Up / Replay",
+      icon: "rotate-ccw",
+      color: hasCatchUp ? colors.foreground : colors.mutedForeground,
       action: () => {
-        onClose();
+        if (!hasCatchUp) return;
+        setShowCatchUp(true);
       },
       dividerBefore: true,
+    },
+    {
+      label: "Open in external player",
+      icon: "external-link",
+      action: () => { onClose(); },
     },
     {
       label: "Record",
       icon: "circle",
       color: "#f44336",
-      action: () => {
-        onClose();
-      },
+      action: () => { onClose(); },
     },
     {
       label: "Custom recording",
       icon: "video",
-      action: () => {
-        onClose();
-      },
+      action: () => { onClose(); },
     },
     {
       label: isFav ? "Remove from My List" : "Add to My List",
-      icon: isFav ? "bookmark" : "bookmark",
+      icon: "bookmark",
       color: isFav ? colors.primary : undefined,
       action: () => {
         Haptics.selectionAsync();
@@ -89,9 +96,7 @@ export function ChannelContextMenu({ channel, visible, onClose, onPlay }: Channe
     {
       label: "Program description",
       icon: "info",
-      action: () => {
-        onClose();
-      },
+      action: () => { onClose(); },
     },
     {
       label: isBlocked ? "Unblock channel" : "Block channel",
@@ -116,74 +121,89 @@ export function ChannelContextMenu({ channel, visible, onClose, onPlay }: Channe
     {
       label: "Assign EPG",
       icon: "calendar",
-      action: () => {
-        onClose();
-      },
+      action: () => { onClose(); },
     },
     {
       label: "Channel options",
       icon: "sliders",
-      action: () => {
-        onClose();
-      },
+      action: () => { onClose(); },
     },
   ];
 
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="fade"
-      onRequestClose={onClose}
-      statusBarTranslucent
-    >
-      <TouchableWithoutFeedback onPress={onClose}>
-        <View style={styles.overlay}>
-          <TouchableWithoutFeedback>
-            <View style={[styles.sheet, { backgroundColor: colors.card, paddingBottom: bottomPad + 8 }]}>
-              {/* Header */}
-              <View style={[styles.header, { borderBottomColor: colors.border }]}>
-                <Text style={[styles.channelTitle, { color: colors.primary }]} numberOfLines={1}>
-                  {channel.name}
-                </Text>
-                {channel.group ? (
-                  <Text style={[styles.groupLabel, { color: colors.mutedForeground }]} numberOfLines={1}>
-                    {channel.group}
+    <>
+      <Modal
+        visible={visible && !showCatchUp}
+        transparent
+        animationType="fade"
+        onRequestClose={onClose}
+        statusBarTranslucent
+      >
+        <TouchableWithoutFeedback onPress={onClose}>
+          <View style={styles.overlay}>
+            <TouchableWithoutFeedback>
+              <View style={[styles.sheet, { backgroundColor: colors.card, paddingBottom: bottomPad + 8 }]}>
+                {/* Header */}
+                <View style={[styles.header, { borderBottomColor: colors.border }]}>
+                  <Text style={[styles.channelTitle, { color: colors.primary }]} numberOfLines={1}>
+                    {channel.name}
                   </Text>
-                ) : null}
-              </View>
+                  {channel.group ? (
+                    <Text style={[styles.groupLabel, { color: colors.mutedForeground }]} numberOfLines={1}>
+                      {channel.group}
+                    </Text>
+                  ) : null}
+                </View>
 
-              <ScrollView showsVerticalScrollIndicator={false}>
-                {options.map((opt, i) => (
-                  <React.Fragment key={opt.label}>
-                    {opt.dividerBefore && (
-                      <View style={[styles.divider, { backgroundColor: colors.border }]} />
-                    )}
-                    <TouchableOpacity
-                      onPress={opt.action}
-                      style={styles.option}
-                      activeOpacity={0.7}
-                    >
-                      <Feather
-                        name={opt.icon}
-                        size={18}
-                        color={opt.color ?? colors.foreground}
-                        style={styles.optionIcon}
-                      />
-                      <Text style={[styles.optionLabel, { color: opt.color ?? colors.foreground }]}>
-                        {opt.label}
-                      </Text>
-                    </TouchableOpacity>
-                  </React.Fragment>
-                ))}
-              </ScrollView>
-            </View>
-          </TouchableWithoutFeedback>
-        </View>
-      </TouchableWithoutFeedback>
-    </Modal>
+                <ScrollView showsVerticalScrollIndicator={false}>
+                  {options.map((opt) => (
+                    <React.Fragment key={opt.label}>
+                      {opt.dividerBefore && (
+                        <View style={[styles.divider, { backgroundColor: colors.border }]} />
+                      )}
+                      <TouchableOpacity
+                        onPress={opt.action}
+                        style={styles.option}
+                        activeOpacity={0.7}
+                      >
+                        <Feather
+                          name={opt.icon}
+                          size={18}
+                          color={opt.color ?? colors.foreground}
+                          style={styles.optionIcon}
+                        />
+                        <Text style={[styles.optionLabel, { color: opt.color ?? colors.foreground }]}>
+                          {opt.label}
+                        </Text>
+                        {opt.label === "Catch-Up / Replay" && hasCatchUp && (
+                          <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
+                        )}
+                      </TouchableOpacity>
+                    </React.Fragment>
+                  ))}
+                </ScrollView>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
+
+      <CatchUpSheet
+        channel={channel}
+        visible={showCatchUp}
+        onClose={() => {
+          setShowCatchUp(false);
+          onClose();
+        }}
+        onPlay={(ch, program) => {
+          setShowCatchUp(false);
+          onClose();
+          onCatchUp(ch, program);
+        }}
+      />
+    </>
   );
 }
 
@@ -232,5 +252,6 @@ const styles = StyleSheet.create({
   optionLabel: {
     fontSize: 14,
     fontFamily: "Inter_400Regular",
+    flex: 1,
   },
 });

@@ -141,7 +141,7 @@ export default function HomeScreen() {
               <GroupList />
               <View style={styles.channelArea}>
                 {selectedChannel && <ProgramInfo onPlay={handlePlayChannel} />}
-                <ChannelList onPlayChannel={handlePlayChannel} />
+                <ChannelList onPlayChannel={handlePlayChannel} onCatchUp={handleCatchUp} />
               </View>
             </View>
           )}
