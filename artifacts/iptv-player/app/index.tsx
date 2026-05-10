@@ -17,6 +17,7 @@ import { AddPlaylistWizard } from "@/components/AddPlaylistWizard";
 import { ChannelList } from "@/components/ChannelList";
 import { EPGGrid } from "@/components/EPGGrid";
 import { GroupList } from "@/components/GroupList";
+import { PlaylistSwitcher } from "@/components/PlaylistSwitcher";
 import { ProgramInfo } from "@/components/ProgramInfo";
 import { SearchModal } from "@/components/SearchModal";
 import { Sidebar } from "@/components/Sidebar";
@@ -33,6 +34,7 @@ export default function HomeScreen() {
 
   const [showAddPlaylist, setShowAddPlaylist] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
+  const [showSwitcher, setShowSwitcher] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("list");
 
   const handlePlayChannel = (channel: Channel) => {
@@ -115,7 +117,7 @@ export default function HomeScreen() {
       <StatusBar barStyle="light-content" backgroundColor={colors.background} />
 
       <View style={styles.mainLayout}>
-        <Sidebar onSearch={() => setShowSearch(true)} onSettings={handleSettings} />
+        <Sidebar onSearch={() => setShowSearch(true)} onSettings={handleSettings} onSwitchPlaylist={() => setShowSwitcher(true)} />
 
         {/* Right content area */}
         <View style={styles.contentArea}>
@@ -169,6 +171,11 @@ export default function HomeScreen() {
         visible={showSearch}
         onClose={() => setShowSearch(false)}
         onPlayChannel={handlePlayChannel}
+      />
+      <PlaylistSwitcher
+        visible={showSwitcher}
+        onClose={() => setShowSwitcher(false)}
+        onAddPlaylist={() => { setShowSwitcher(false); setShowAddPlaylist(true); }}
       />
     </View>
   );

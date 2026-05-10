@@ -1,20 +1,25 @@
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import React from "react";
-import { Platform, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import {
+  Platform,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Section, useIPTV } from "@/context/IPTVContext";
 import { useColors } from "@/hooks/useColors";
 
 interface SidebarItem {
-  section: Section | "Search" | "Settings";
+  section: Section;
   icon: keyof typeof Feather.glyphMap;
   label: string;
 }
 
 const ITEMS: SidebarItem[] = [
-  { section: "Search", icon: "search", label: "Search" },
   { section: "TV", icon: "tv", label: "TV" },
   { section: "Movies", icon: "film", label: "Movies" },
   { section: "Shows", icon: "grid", label: "Shows" },
@@ -25,23 +30,13 @@ const ITEMS: SidebarItem[] = [
 interface SidebarProps {
   onSearch: () => void;
   onSettings: () => void;
+  onSwitchPlaylist: () => void;
 }
 
-export function Sidebar({ onSearch, onSettings }: SidebarProps) {
+export function Sidebar({ onSearch, onSettings, onSwitchPlaylist }: SidebarProps) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { currentSection, setCurrentSection } = useIPTV();
-
-  const handlePress = (item: SidebarItem) => {
-    Haptics.selectionAsync();
-    if (item.section === "Search") {
-      onSearch();
-    } else if (item.section === "Settings") {
-      onSettings();
-    } else {
-      setCurrentSection(item.section as Section);
-    }
-  };
+  const { currentSection, setCurrentSection, activePlaylist, playlists } = useIPTV();
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
@@ -52,24 +47,78 @@ export function Sidebar({ onSearch, onSettings }: SidebarProps) {
         styles.container,
         {
           backgroundColor: colors.sidebar,
-          paddingTop: topPad + 8,
-          paddingBottom: bottomPad + 8,
+          paddingTop: topPad + 6,
+          paddingBottom: bottomPad + 6,
           borderRightColor: colors.border,
         },
       ]}
     >
+      {/* Logo */}
       <View style={styles.logo}>
-        <Text style={[styles.logoText, { color: colors.primary }]}>tivi</Text>
-        <Text style={[styles.logoText, { color: colors.foreground }]}>mate</Text>
+        <Text style={[styles.logoBlue, { color: colors.primary }]}>tivi</Text>
+        <Text style={[styles.logoWhite, { color: colors.foreground }]}>mate</Text>
       </View>
 
-      <View style={styles.items}>
+      {/* Active playlist badge — tap to switch */}
+      <TouchableOpacity
+        onPress={() => {
+          Haptics.selectionAsync();
+          onSwitchPlaylist();
+        }}
+        style={[styles.playlistBadge, { backgroundColor: colors.secondary, borderColor: colors.border }]}
+        activeOpacity={0.75}
+      >
+        <View style={styles.playlistBadgeLeft}>
+          <View style={[styles.playlistDot, { backgroundColor: activePlaylist ? colors.primary : colors.mutedForeground }]} />
+          <Text
+            style={[
+              styles.playlistName,
+              { color: activePlaylist ? colors.foreground : colors.mutedForeground },
+            ]}
+            numberOfLines={1}
+          >
+            {activePlaylist?.name ?? "No playlist"}
+          </Text>
+        </View>
+        <Feather name="chevron-down" size={12} color={colors.mutedForeground} />
+      </TouchableOpacity>
+
+      {/* Playlist count indicator */}
+      {playlists.length > 1 && (
+        <Text style={[styles.playlistCount, { color: colors.mutedForeground }]}>
+          {playlists.length} playlists
+        </Text>
+      )}
+
+      {/* Divider */}
+      <View style={[styles.divider, { backgroundColor: colors.border }]} />
+
+      {/* Search */}
+      <TouchableOpacity
+        onPress={() => {
+          Haptics.selectionAsync();
+          onSearch();
+        }}
+        style={styles.item}
+        activeOpacity={0.7}
+      >
+        <Feather name="search" size={19} color={colors.mutedForeground} />
+        <Text style={[styles.itemLabel, { color: colors.mutedForeground, fontFamily: "Inter_400Regular" }]}>
+          Search
+        </Text>
+      </TouchableOpacity>
+
+      {/* Nav items */}
+      <View style={styles.navItems}>
         {ITEMS.map((item) => {
           const active = item.section === currentSection;
           return (
             <TouchableOpacity
               key={item.section}
-              onPress={() => handlePress(item)}
+              onPress={() => {
+                Haptics.selectionAsync();
+                setCurrentSection(item.section);
+              }}
               style={[
                 styles.item,
                 active && { backgroundColor: colors.highlight },
@@ -78,7 +127,7 @@ export function Sidebar({ onSearch, onSettings }: SidebarProps) {
             >
               <Feather
                 name={item.icon}
-                size={20}
+                size={19}
                 color={active ? colors.primary : colors.mutedForeground}
               />
               <Text
@@ -92,24 +141,26 @@ export function Sidebar({ onSearch, onSettings }: SidebarProps) {
               >
                 {item.label}
               </Text>
+              {active && (
+                <View style={[styles.activeBar, { backgroundColor: colors.primary }]} />
+              )}
             </TouchableOpacity>
           );
         })}
       </View>
 
-      <View style={styles.footer}>
+      {/* Footer */}
+      <View style={[styles.footer, { borderTopColor: colors.border }]}>
         <TouchableOpacity
-          onPress={onSettings}
+          onPress={() => {
+            Haptics.selectionAsync();
+            onSettings();
+          }}
           style={styles.item}
           activeOpacity={0.7}
         >
-          <Feather name="settings" size={20} color={colors.mutedForeground} />
-          <Text
-            style={[
-              styles.itemLabel,
-              { color: colors.mutedForeground, fontFamily: "Inter_400Regular" },
-            ]}
-          >
+          <Feather name="settings" size={19} color={colors.mutedForeground} />
+          <Text style={[styles.itemLabel, { color: colors.mutedForeground, fontFamily: "Inter_400Regular" }]}>
             Settings
           </Text>
         </TouchableOpacity>
@@ -127,33 +178,87 @@ const styles = StyleSheet.create({
   logo: {
     flexDirection: "row",
     paddingHorizontal: 12,
-    paddingBottom: 20,
+    paddingBottom: 10,
     alignItems: "center",
   },
-  logoText: {
+  logoBlue: {
     fontSize: 18,
     fontFamily: "Inter_700Bold",
   },
-  items: {
+  logoWhite: {
+    fontSize: 18,
+    fontFamily: "Inter_700Bold",
+  },
+  playlistBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginHorizontal: 8,
+    marginBottom: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  playlistBadgeLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
     flex: 1,
-    gap: 2,
+    overflow: "hidden",
+  },
+  playlistDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    flexShrink: 0,
+  },
+  playlistName: {
+    fontSize: 11,
+    fontFamily: "Inter_500Medium",
+    flex: 1,
+  },
+  playlistCount: {
+    fontSize: 10,
+    fontFamily: "Inter_400Regular",
+    textAlign: "center",
+    marginBottom: 4,
+  },
+  divider: {
+    height: 1,
+    marginHorizontal: 12,
+    marginBottom: 8,
+    marginTop: 4,
+  },
+  navItems: {
+    flex: 1,
+    gap: 1,
   },
   item: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingVertical: 9,
     borderRadius: 4,
     marginHorizontal: 4,
+    position: "relative",
   },
   itemLabel: {
-    fontSize: 13,
+    fontSize: 12,
+    flex: 1,
+  },
+  activeBar: {
+    position: "absolute",
+    left: 0,
+    top: 6,
+    bottom: 6,
+    width: 3,
+    borderRadius: 2,
   },
   footer: {
-    marginTop: 8,
     borderTopWidth: 1,
-    borderTopColor: "#2a2a2a",
-    paddingTop: 8,
+    paddingTop: 6,
+    marginTop: 4,
   },
 });
