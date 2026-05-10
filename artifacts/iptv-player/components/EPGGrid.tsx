@@ -3,6 +3,7 @@ import { Image } from "expo-image";
 import * as Haptics from "expo-haptics";
 import React, {
   useCallback,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -23,13 +24,22 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ProgramDetailsSheet } from "@/components/ProgramDetailsSheet";
 import { Channel, EPGProgram, useIPTV } from "@/context/IPTVContext";
 import { useColors } from "@/hooks/useColors";
-import { ensureEPG } from "@/utils/mockEPG";
+import {
+  ensureEPG,
+  formatDayShort,
+  getDayEnd,
+  getDayStart,
+} from "@/utils/mockEPG";
 
 const SLOT_WIDTH = 120;
 const CHANNEL_COL_WIDTH = 72;
 const ROW_HEIGHT = 56;
 const HEADER_HEIGHT = 36;
+const DAY_BAR_HEIGHT = 48;
 const MINS_PER_SLOT = 30;
+const SLOTS_PER_DAY = 48; // 24h × 2 slots/h
+
+const DAY_OFFSETS = [-2, -1, 0, 1, 2, 3]; // yesterday-2 through tomorrow+3
 
 function msToSlotOffset(ms: number, refTime: number): number {
   return ((ms - refTime) / (MINS_PER_SLOT * 60 * 1000)) * SLOT_WIDTH;
@@ -102,7 +112,6 @@ function ProgramBlock({ program, refTime, isSelected, state, onPress }: ProgramB
         { left, width, backgroundColor: bg, borderColor },
       ]}
     >
-      {/* Progress fill for current program */}
       {state === "current" && progress > 0 && (
         <View
           style={[
@@ -111,7 +120,6 @@ function ProgramBlock({ program, refTime, isSelected, state, onPress }: ProgramB
           ]}
         />
       )}
-
       <Text style={[styles.programTitle, { color: titleColor }]} numberOfLines={1}>
         {program.title}
       </Text>
@@ -143,19 +151,28 @@ export function EPGGrid({ onPlayChannel, onCatchUp }: EPGGridProps) {
   const { activePlaylist, selectedGroup, selectedChannel, setSelectedChannel } = useIPTV();
 
   const now = Date.now();
-  const refTime = useMemo(() => {
-    const hoursBack = 2;
-    return Math.floor((now - hoursBack * 60 * 60 * 1000) / (MINS_PER_SLOT * 60 * 1000)) * (MINS_PER_SLOT * 60 * 1000);
-  }, []);
+  const [selectedDayOffset, setSelectedDayOffset] = useState(0);
 
-  const totalSlots = (2 + 8) * 2;
-  const timeSlots = useMemo(() => {
-    return Array.from({ length: totalSlots }, (_, i) => refTime + i * MINS_PER_SLOT * 60 * 1000);
-  }, [refTime]);
+  // refTime = midnight of the selected day
+  const refTime = useMemo(() => getDayStart(selectedDayOffset), [selectedDayOffset]);
+  const dayEnd = useMemo(() => getDayEnd(selectedDayOffset), [selectedDayOffset]);
+  const isToday = selectedDayOffset === 0;
 
+  const totalSlots = SLOTS_PER_DAY;
   const totalWidth = totalSlots * SLOT_WIDTH;
+
+  const timeSlots = useMemo(
+    () => Array.from({ length: totalSlots }, (_, i) => refTime + i * MINS_PER_SLOT * 60 * 1000),
+    [refTime]
+  );
+
   const nowOffset = msToSlotOffset(now, refTime);
-  const initialX = clamp(nowOffset - SLOT_WIDTH, 0, totalWidth);
+  // For today: scroll to 1 slot before now; for other days: scroll to 6am
+  const initialX = useMemo(() => {
+    if (isToday) return clamp(nowOffset - SLOT_WIDTH, 0, totalWidth);
+    const sixAm = refTime + 6 * 60 * 60 * 1000;
+    return clamp(msToSlotOffset(sixAm, refTime), 0, totalWidth);
+  }, [isToday, nowOffset, refTime, totalWidth]);
 
   const rawChannels = useMemo(() => {
     if (!activePlaylist) return [];
@@ -164,22 +181,35 @@ export function EPGGrid({ onPlayChannel, onCatchUp }: EPGGridProps) {
     return filtered.slice(0, 60);
   }, [activePlaylist, selectedGroup]);
 
-  const channels = useMemo(() => ensureEPG(rawChannels), [rawChannels]);
+  const channels = useMemo(
+    () => ensureEPG(rawChannels, 2, 3),
+    [rawChannels]
+  );
 
   // Synchronized horizontal scroll
   const headerScrollRef = useRef<ScrollView>(null);
   const rowScrollRefs = useRef<Map<string, ScrollView | null>>(new Map());
   const isScrolling = useRef(false);
-  const lastScrollX = useRef(initialX);
+  const scrollXRef = useRef(initialX);
 
-  // Program details sheet state
+  // Reset scroll position when day changes
+  useEffect(() => {
+    const x = isToday
+      ? clamp(nowOffset - SLOT_WIDTH, 0, totalWidth)
+      : clamp(msToSlotOffset(refTime + 6 * 60 * 60 * 1000, refTime), 0, totalWidth);
+
+    scrollXRef.current = x;
+    headerScrollRef.current?.scrollTo({ x, animated: true });
+    rowScrollRefs.current.forEach((ref) => ref?.scrollTo({ x, animated: true }));
+  }, [selectedDayOffset]);
+
   const [sheetChannel, setSheetChannel] = useState<Channel | null>(null);
   const [sheetProgram, setSheetProgram] = useState<EPGProgram | null>(null);
 
   const syncScroll = useCallback((x: number, sourceId: string) => {
     if (isScrolling.current) return;
     isScrolling.current = true;
-    lastScrollX.current = x;
+    scrollXRef.current = x;
     headerScrollRef.current?.scrollTo({ x, animated: false });
     rowScrollRefs.current.forEach((ref, id) => {
       if (id !== sourceId && ref) ref.scrollTo({ x, animated: false });
@@ -202,15 +232,21 @@ export function EPGGrid({ onPlayChannel, onCatchUp }: EPGGridProps) {
     setSheetProgram(program);
   }, [setSelectedChannel]);
 
+  const handleSelectDay = useCallback((offset: number) => {
+    Haptics.selectionAsync();
+    setSelectedDayOffset(offset);
+  }, []);
+
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
-  const topPad = Platform.OS === "web" ? 0 : 0;
 
   const renderRow = useCallback(({ item: channel }: { item: Channel }) => {
     const isActive = selectedChannel?.id === channel.id;
+    const dayPrograms = (channel.epg ?? []).filter(
+      (p) => p.endTime > refTime && p.startTime < dayEnd
+    );
 
     return (
       <View style={[styles.row, { borderBottomColor: colors.border }]}>
-        {/* Channel column */}
         <TouchableOpacity
           style={[
             styles.channelCell,
@@ -238,7 +274,6 @@ export function EPGGrid({ onPlayChannel, onCatchUp }: EPGGridProps) {
           </Text>
         </TouchableOpacity>
 
-        {/* Program timeline */}
         <ScrollView
           ref={(ref) => rowScrollRefs.current.set(channel.id, ref)}
           horizontal
@@ -249,19 +284,18 @@ export function EPGGrid({ onPlayChannel, onCatchUp }: EPGGridProps) {
           style={styles.programsScroll}
           contentContainerStyle={{ width: totalWidth, height: ROW_HEIGHT }}
         >
-          {/* Past dim overlay */}
-          <View
-            style={[
-              styles.pastOverlay,
-              {
-                width: nowOffset,
-                backgroundColor: "rgba(0,0,0,0.35)",
-              },
-            ]}
-            pointerEvents="none"
-          />
+          {/* Past dim overlay — only for today */}
+          {isToday && (
+            <View
+              style={[
+                styles.pastOverlay,
+                { width: nowOffset, backgroundColor: "rgba(0,0,0,0.35)" },
+              ]}
+              pointerEvents="none"
+            />
+          )}
 
-          {(channel.epg ?? []).map((program, idx) => (
+          {dayPrograms.map((program, idx) => (
             <ProgramBlock
               key={idx}
               program={program}
@@ -275,19 +309,23 @@ export function EPGGrid({ onPlayChannel, onCatchUp }: EPGGridProps) {
             />
           ))}
 
-          {/* Current time line */}
-          <View
-            style={[styles.nowLine, { left: nowOffset, backgroundColor: colors.primary }]}
-            pointerEvents="none"
-          />
-          <View
-            style={[styles.nowTriangle, { left: nowOffset - 5, borderTopColor: colors.primary }]}
-            pointerEvents="none"
-          />
+          {/* Current time line — only for today */}
+          {isToday && (
+            <>
+              <View
+                style={[styles.nowLine, { left: nowOffset, backgroundColor: colors.primary }]}
+                pointerEvents="none"
+              />
+              <View
+                style={[styles.nowTriangle, { left: nowOffset - 5, borderTopColor: colors.primary }]}
+                pointerEvents="none"
+              />
+            </>
+          )}
         </ScrollView>
       </View>
     );
-  }, [selectedChannel, sheetChannel, sheetProgram, colors, now, refTime, totalWidth, nowOffset, initialX, onRowScroll, handleProgramPress, onPlayChannel]);
+  }, [selectedChannel, sheetChannel, sheetProgram, colors, now, refTime, dayEnd, totalWidth, nowOffset, initialX, isToday, onRowScroll, handleProgramPress, onPlayChannel]);
 
   if (!activePlaylist || channels.length === 0) {
     return (
@@ -303,7 +341,54 @@ export function EPGGrid({ onPlayChannel, onCatchUp }: EPGGridProps) {
 
   return (
     <View style={styles.container}>
-      {/* Time ruler header */}
+      {/* ── Day picker bar ── */}
+      <View style={[styles.dayBar, { backgroundColor: colors.sidebar, borderBottomColor: colors.border }]}>
+        <View style={[styles.channelHeaderCell, { borderRightColor: colors.border, backgroundColor: colors.sidebar }]}>
+          <Feather name="calendar" size={13} color={colors.mutedForeground} />
+        </View>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.dayBarScroll}
+        >
+          {DAY_OFFSETS.map((offset) => {
+            const { weekday, date } = formatDayShort(offset);
+            const active = offset === selectedDayOffset;
+            const isNow = offset === 0;
+            return (
+              <TouchableOpacity
+                key={offset}
+                onPress={() => handleSelectDay(offset)}
+                style={[
+                  styles.dayChip,
+                  active && { backgroundColor: colors.primary, borderColor: colors.primary },
+                  !active && { borderColor: colors.border },
+                ]}
+                activeOpacity={0.75}
+              >
+                {isNow && !active && (
+                  <View style={[styles.todayDot, { backgroundColor: colors.primary }]} />
+                )}
+                <Text
+                  style={[
+                    styles.dayChipWeekday,
+                    { color: active ? "#fff" : isNow ? colors.primary : colors.mutedForeground },
+                  ]}
+                >
+                  {isNow ? "Today" : weekday}
+                </Text>
+                {!isNow && (
+                  <Text style={[styles.dayChipDate, { color: active ? "rgba(255,255,255,0.8)" : colors.mutedForeground }]}>
+                    {date}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </View>
+
+      {/* ── Time ruler header ── */}
       <View style={[styles.headerRow, { backgroundColor: colors.muted, borderBottomColor: colors.border }]}>
         <View style={[styles.channelHeaderCell, { borderRightColor: colors.border, backgroundColor: colors.muted }]}>
           <Feather name="tv" size={12} color={colors.mutedForeground} />
@@ -319,13 +404,14 @@ export function EPGGrid({ onPlayChannel, onCatchUp }: EPGGridProps) {
           style={styles.headerScroll}
           contentContainerStyle={{ width: totalWidth, height: HEADER_HEIGHT }}
         >
-          {/* Past tint on header */}
-          <View
-            style={[styles.pastOverlay, { width: nowOffset, backgroundColor: "rgba(0,0,0,0.2)" }]}
-            pointerEvents="none"
-          />
+          {isToday && (
+            <View
+              style={[styles.pastOverlay, { width: nowOffset, backgroundColor: "rgba(0,0,0,0.2)" }]}
+              pointerEvents="none"
+            />
+          )}
           {timeSlots.map((slot, i) => {
-            const isPastSlot = slot + MINS_PER_SLOT * 60 * 1000 < now;
+            const isPastSlot = isToday && slot + MINS_PER_SLOT * 60 * 1000 < now;
             return (
               <View key={i} style={[styles.timeSlot, { left: i * SLOT_WIDTH, borderRightColor: colors.border }]}>
                 <Text style={[styles.timeText, { color: isPastSlot ? colors.mutedForeground : colors.foreground }]}>
@@ -334,11 +420,13 @@ export function EPGGrid({ onPlayChannel, onCatchUp }: EPGGridProps) {
               </View>
             );
           })}
-          {/* Now marker */}
-          <View style={[styles.nowMarker, { left: nowOffset, backgroundColor: colors.primary }]} />
+          {isToday && (
+            <View style={[styles.nowMarker, { left: nowOffset, backgroundColor: colors.primary }]} />
+          )}
         </ScrollView>
       </View>
 
+      {/* ── Channel rows ── */}
       <FlatList
         data={channels}
         keyExtractor={(item) => item.id}
@@ -366,6 +454,42 @@ export function EPGGrid({ onPlayChannel, onCatchUp }: EPGGridProps) {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+
+  dayBar: {
+    flexDirection: "row",
+    height: DAY_BAR_HEIGHT,
+    borderBottomWidth: 1,
+    alignItems: "center",
+  },
+  dayBarScroll: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 8,
+    gap: 6,
+  },
+  dayChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 11,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  todayDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+  },
+  dayChipWeekday: {
+    fontSize: 12,
+    fontFamily: "Inter_600SemiBold",
+  },
+  dayChipDate: {
+    fontSize: 11,
+    fontFamily: "Inter_400Regular",
+  },
+
   headerRow: {
     flexDirection: "row",
     height: HEADER_HEIGHT,
@@ -396,6 +520,7 @@ const styles = StyleSheet.create({
     width: 2,
     height: HEADER_HEIGHT,
   },
+
   row: {
     flexDirection: "row",
     height: ROW_HEIGHT,
@@ -426,6 +551,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
     lineHeight: 12,
   },
+
   programsScroll: {
     flex: 1,
     overflow: "hidden",
@@ -495,6 +621,7 @@ const styles = StyleSheet.create({
     borderRightColor: "transparent",
     zIndex: 10,
   },
+
   emptyContainer: {
     flex: 1,
     alignItems: "center",
