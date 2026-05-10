@@ -14,6 +14,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { CatchUpSheet } from "@/components/CatchUpSheet";
+import { CustomRecordingSheet } from "@/components/CustomRecordingSheet";
 import { ScheduleRecordingSheet } from "@/components/ScheduleRecordingSheet";
 import { Channel, EPGProgram, useIPTV } from "@/context/IPTVContext";
 import { useColors } from "@/hooks/useColors";
@@ -24,6 +25,7 @@ interface ChannelContextMenuProps {
   onClose: () => void;
   onPlay: (channel: Channel) => void;
   onCatchUp: (channel: Channel, program: EPGProgram) => void;
+  onGoToRecordings?: () => void;
 }
 
 interface MenuOption {
@@ -35,12 +37,30 @@ interface MenuOption {
   chevron?: boolean;
 }
 
-export function ChannelContextMenu({ channel, visible, onClose, onPlay, onCatchUp }: ChannelContextMenuProps) {
+export function ChannelContextMenu({
+  channel,
+  visible,
+  onClose,
+  onPlay,
+  onCatchUp,
+  onGoToRecordings,
+}: ChannelContextMenuProps) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { favorites, toggleFavorite, blockedChannels, toggleBlockChannel, hiddenChannels, toggleHideChannel } = useIPTV();
+  const {
+    favorites,
+    toggleFavorite,
+    blockedChannels,
+    toggleBlockChannel,
+    hiddenChannels,
+    toggleHideChannel,
+    recordings,
+    cancelRecording,
+  } = useIPTV();
   const [showCatchUp, setShowCatchUp] = useState(false);
   const [showRecord, setShowRecord] = useState(false);
+  const [showCustomRecord, setShowCustomRecord] = useState(false);
+  const [showStopConfirm, setShowStopConfirm] = useState(false);
 
   if (!channel) return null;
 
@@ -56,6 +76,14 @@ export function ChannelContextMenu({ channel, visible, onClose, onPlay, onCatchU
     ?.filter((p) => p.startTime > Date.now())
     .sort((a, b) => a.startTime - b.startTime)[0];
   const recordProgram = nowProgram ?? nextProgram ?? null;
+
+  const activeRecording = recordings.find(
+    (r) =>
+      r.channelId === channel.id &&
+      r.startTime <= Date.now() &&
+      r.endTime >= Date.now()
+  );
+  const isActivelyRecording = !!activeRecording;
 
   const options: MenuOption[] = [
     {
@@ -77,14 +105,31 @@ export function ChannelContextMenu({ channel, visible, onClose, onPlay, onCatchU
       icon: "external-link",
       action: () => { onClose(); },
     },
+    ...(isActivelyRecording
+      ? [
+          {
+            label: "Stop recording",
+            icon: "square" as keyof typeof Feather.glyphMap,
+            color: "#f44336",
+            action: () => { setShowStopConfirm(true); },
+          },
+        ]
+      : [
+          {
+            label: recordProgram ? `Record: ${recordProgram.title}` : "Record",
+            icon: "circle" as keyof typeof Feather.glyphMap,
+            color: "#f44336",
+            action: () => { setShowRecord(true); },
+          },
+          {
+            label: "Custom recording",
+            icon: "settings" as keyof typeof Feather.glyphMap,
+            color: colors.foreground,
+            action: () => { setShowCustomRecord(true); },
+          },
+        ]),
     {
-      label: recordProgram ? `Record: ${recordProgram.title}` : "Record",
-      icon: "circle",
-      color: "#f44336",
-      action: () => { setShowRecord(true); },
-    },
-    {
-      label: isFav ? "Remove from My List" : "Add to My List",
+      label: isFav ? "Remove from My List" : "Add to My list",
       icon: "bookmark",
       color: isFav ? colors.primary : undefined,
       action: () => {
@@ -133,10 +178,19 @@ export function ChannelContextMenu({ channel, visible, onClose, onPlay, onCatchU
 
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
 
+  const handleStopRecording = () => {
+    if (activeRecording) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      cancelRecording(activeRecording.id);
+    }
+    setShowStopConfirm(false);
+    onClose();
+  };
+
   return (
     <>
       <Modal
-        visible={visible && !showCatchUp && !showRecord}
+        visible={visible && !showCatchUp && !showRecord && !showCustomRecord && !showStopConfirm}
         transparent
         animationType="fade"
         onRequestClose={onClose}
@@ -168,13 +222,22 @@ export function ChannelContextMenu({ channel, visible, onClose, onPlay, onCatchU
                         style={styles.option}
                         activeOpacity={0.7}
                       >
-                        <Feather
-                          name={opt.icon}
-                          size={18}
-                          color={opt.color ?? colors.foreground}
-                          style={styles.optionIcon}
-                        />
-                        <Text style={[styles.optionLabel, { color: opt.color ?? colors.foreground }]} numberOfLines={1}>
+                        {opt.icon === "circle" && opt.color === "#f44336" ? (
+                          <View style={styles.recDotWrap}>
+                            <View style={styles.recDot} />
+                          </View>
+                        ) : (
+                          <Feather
+                            name={opt.icon}
+                            size={18}
+                            color={opt.color ?? colors.foreground}
+                            style={styles.optionIcon}
+                          />
+                        )}
+                        <Text
+                          style={[styles.optionLabel, { color: opt.color ?? colors.foreground }]}
+                          numberOfLines={1}
+                        >
                           {opt.label}
                         </Text>
                         {opt.chevron && (
@@ -184,6 +247,41 @@ export function ChannelContextMenu({ channel, visible, onClose, onPlay, onCatchU
                     </React.Fragment>
                   ))}
                 </ScrollView>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
+
+      {/* Stop recording confirmation */}
+      <Modal
+        visible={showStopConfirm}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowStopConfirm(false)}
+        statusBarTranslucent
+      >
+        <TouchableWithoutFeedback onPress={() => setShowStopConfirm(false)}>
+          <View style={styles.overlay}>
+            <TouchableWithoutFeedback>
+              <View style={[styles.stopDialog, { backgroundColor: colors.card }]}>
+                <Text style={[styles.stopTitle, { color: colors.foreground }]}>Stop recording?</Text>
+                <View style={styles.stopBtnRow}>
+                  <TouchableOpacity
+                    onPress={handleStopRecording}
+                    style={[styles.stopBtn, { backgroundColor: colors.secondary, borderColor: colors.border }]}
+                    activeOpacity={0.75}
+                  >
+                    <Text style={[styles.stopBtnText, { color: colors.foreground }]}>Stop</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => setShowStopConfirm(false)}
+                    style={[styles.stopBtn, { backgroundColor: "transparent" }]}
+                    activeOpacity={0.75}
+                  >
+                    <Text style={[styles.stopBtnText, { color: colors.mutedForeground }]}>Cancel</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             </TouchableWithoutFeedback>
           </View>
@@ -202,6 +300,22 @@ export function ChannelContextMenu({ channel, visible, onClose, onPlay, onCatchU
         program={recordProgram}
         visible={showRecord}
         onClose={() => { setShowRecord(false); onClose(); }}
+      />
+
+      <CustomRecordingSheet
+        channel={channel}
+        program={recordProgram}
+        visible={showCustomRecord}
+        onClose={() => setShowCustomRecord(false)}
+        onNewRecording={() => {
+          setShowCustomRecord(false);
+          setShowRecord(true);
+        }}
+        onAllRecordings={() => {
+          setShowCustomRecord(false);
+          onClose();
+          if (onGoToRecordings) onGoToRecordings();
+        }}
       />
     </>
   );
@@ -253,5 +367,44 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: "Inter_400Regular",
     flex: 1,
+  },
+  recDotWrap: {
+    width: 22,
+    alignItems: "center",
+  },
+  recDot: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: "#f44336",
+  },
+  stopDialog: {
+    marginHorizontal: 32,
+    borderRadius: 16,
+    padding: 28,
+    alignItems: "center",
+    gap: 24,
+  },
+  stopTitle: {
+    fontSize: 20,
+    fontFamily: "Inter_600SemiBold",
+    textAlign: "center",
+  },
+  stopBtnRow: {
+    flexDirection: "row",
+    gap: 8,
+    width: "100%",
+  },
+  stopBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "transparent",
+  },
+  stopBtnText: {
+    fontSize: 15,
+    fontFamily: "Inter_500Medium",
   },
 });

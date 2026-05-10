@@ -120,7 +120,7 @@ export default function SettingsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { playlists, activePlaylist, setActivePlaylist, removePlaylist, reminderSettings, updateReminderSettings } = useIPTV();
+  const { playlists, activePlaylist, setActivePlaylist, removePlaylist, reminderSettings, updateReminderSettings, recordingSettings, updateRecordingSettings } = useIPTV();
   const {
     isEnabled,
     hasPin,
@@ -487,13 +487,71 @@ export default function SettingsScreen() {
   const renderRecording = () => (
     <ScrollView contentContainerStyle={{ paddingBottom: bottomPad + 16, paddingTop: 8 }}>
       <View style={[styles.section, { borderColor: colors.border, backgroundColor: colors.card }]}>
-        <SettingRow icon="folder" label="Storage location" value="Default" onPress={() => {}} />
-        <SettingRow icon="hard-drive" label="Max storage" value="Unlimited" onPress={() => {}} last />
+        <SettingRow
+          icon="folder"
+          label="Recordings folder"
+          value={recordingSettings.recordingsFolder}
+          onPress={() => {}}
+          last
+        />
       </View>
-      <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>BEHAVIOUR</Text>
-      <View style={[styles.section, { borderColor: colors.border, backgroundColor: colors.card }]}>
-        <SettingRow icon="alert-triangle" label="Record overlap before, sec" value="0" onPress={() => {}} />
-        <SettingRow icon="alert-triangle" label="Record overlap after, sec" value="0" onPress={() => {}} last />
+
+      <View style={[styles.section, { borderColor: colors.border, backgroundColor: colors.card, marginTop: 12 }]}>
+        {/* Start before */}
+        <View style={[rowStyles.row, { borderBottomColor: colors.border, borderBottomWidth: StyleSheet.hairlineWidth }]}>
+          <View style={[rowStyles.iconWrap, { backgroundColor: colors.secondary }]}>
+            <Feather name="skip-back" size={17} color={colors.mutedForeground} />
+          </View>
+          <View style={rowStyles.info}>
+            <Text style={[rowStyles.label, { color: colors.foreground }]}>Start recording before program start, min</Text>
+            <Text style={[rowStyles.value, { color: colors.mutedForeground }]}>{recordingSettings.startBeforeMinutes}</Text>
+          </View>
+          <View style={styles.stepper}>
+            <TouchableOpacity
+              style={[styles.stepBtn, { backgroundColor: colors.secondary, borderColor: colors.border }]}
+              onPress={() => { Haptics.selectionAsync(); updateRecordingSettings({ startBeforeMinutes: Math.max(0, recordingSettings.startBeforeMinutes - 1) }); }}
+              activeOpacity={0.7}
+            >
+              <Feather name="minus" size={13} color={colors.foreground} />
+            </TouchableOpacity>
+            <Text style={[styles.stepValue, { color: colors.foreground }]}>{recordingSettings.startBeforeMinutes}</Text>
+            <TouchableOpacity
+              style={[styles.stepBtn, { backgroundColor: colors.secondary, borderColor: colors.border }]}
+              onPress={() => { Haptics.selectionAsync(); updateRecordingSettings({ startBeforeMinutes: Math.min(60, recordingSettings.startBeforeMinutes + 1) }); }}
+              activeOpacity={0.7}
+            >
+              <Feather name="plus" size={13} color={colors.foreground} />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Stop after */}
+        <View style={rowStyles.row}>
+          <View style={[rowStyles.iconWrap, { backgroundColor: colors.secondary }]}>
+            <Feather name="skip-forward" size={17} color={colors.mutedForeground} />
+          </View>
+          <View style={rowStyles.info}>
+            <Text style={[rowStyles.label, { color: colors.foreground }]}>Stop recording after program end, min</Text>
+            <Text style={[rowStyles.value, { color: colors.mutedForeground }]}>{recordingSettings.stopAfterMinutes}</Text>
+          </View>
+          <View style={styles.stepper}>
+            <TouchableOpacity
+              style={[styles.stepBtn, { backgroundColor: colors.secondary, borderColor: colors.border }]}
+              onPress={() => { Haptics.selectionAsync(); updateRecordingSettings({ stopAfterMinutes: Math.max(0, recordingSettings.stopAfterMinutes - 1) }); }}
+              activeOpacity={0.7}
+            >
+              <Feather name="minus" size={13} color={colors.foreground} />
+            </TouchableOpacity>
+            <Text style={[styles.stepValue, { color: colors.foreground }]}>{recordingSettings.stopAfterMinutes}</Text>
+            <TouchableOpacity
+              style={[styles.stepBtn, { backgroundColor: colors.secondary, borderColor: colors.border }]}
+              onPress={() => { Haptics.selectionAsync(); updateRecordingSettings({ stopAfterMinutes: Math.min(60, recordingSettings.stopAfterMinutes + 1) }); }}
+              activeOpacity={0.7}
+            >
+              <Feather name="plus" size={13} color={colors.foreground} />
+            </TouchableOpacity>
+          </View>
+        </View>
       </View>
     </ScrollView>
   );

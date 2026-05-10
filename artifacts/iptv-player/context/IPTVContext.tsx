@@ -68,6 +68,18 @@ export const DEFAULT_REMINDER_SETTINGS: ReminderSettings = {
   wakeFromSleep: false,
 };
 
+export interface RecordingSettings {
+  recordingsFolder: string;
+  startBeforeMinutes: number;
+  stopAfterMinutes: number;
+}
+
+export const DEFAULT_RECORDING_SETTINGS: RecordingSettings = {
+  recordingsFolder: "/storage/emulated/0/Download/TiviMate/Recordings",
+  startBeforeMinutes: 0,
+  stopAfterMinutes: 0,
+};
+
 export interface Recording {
   id: string;
   channelId: string;
@@ -131,6 +143,8 @@ interface IPTVContextValue {
   toggleGroupExternalPlayer: (group: string) => void;
   reminderSettings: ReminderSettings;
   updateReminderSettings: (patch: Partial<ReminderSettings>) => void;
+  recordingSettings: RecordingSettings;
+  updateRecordingSettings: (patch: Partial<RecordingSettings>) => void;
   recordings: Recording[];
   scheduleRecording: (recording: Omit<Recording, "id" | "createdAt">) => void;
   cancelRecording: (id: string) => void;
@@ -248,6 +262,7 @@ export function IPTVProvider({ children }: { children: React.ReactNode }) {
   const [groupEpgOffsets, setGroupEpgOffsetsState] = useState<Record<string, number>>({});
   const [groupExternalPlayer, setGroupExternalPlayer] = useState<string[]>([]);
   const [reminderSettings, setReminderSettings] = useState<ReminderSettings>(DEFAULT_REMINDER_SETTINGS);
+  const [recordingSettings, setRecordingSettings] = useState<RecordingSettings>(DEFAULT_RECORDING_SETTINGS);
   const [isLoading, setIsLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState("");
 
@@ -284,6 +299,8 @@ export function IPTVProvider({ children }: { children: React.ReactNode }) {
         if (extPlayer) setGroupExternalPlayer(JSON.parse(extPlayer));
         const remSettings = await AsyncStorage.getItem("reminderSettings");
         if (remSettings) setReminderSettings({ ...DEFAULT_REMINDER_SETTINGS, ...JSON.parse(remSettings) });
+        const recSettings = await AsyncStorage.getItem("recordingSettings");
+        if (recSettings) setRecordingSettings({ ...DEFAULT_RECORDING_SETTINGS, ...JSON.parse(recSettings) });
       } catch {}
     })();
   }, []);
@@ -374,6 +391,14 @@ export function IPTVProvider({ children }: { children: React.ReactNode }) {
     setReminderSettings((prev) => {
       const next = { ...prev, ...patch };
       AsyncStorage.setItem("reminderSettings", JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const updateRecordingSettings = useCallback((patch: Partial<RecordingSettings>) => {
+    setRecordingSettings((prev) => {
+      const next = { ...prev, ...patch };
+      AsyncStorage.setItem("recordingSettings", JSON.stringify(next));
       return next;
     });
   }, []);
@@ -533,6 +558,8 @@ export function IPTVProvider({ children }: { children: React.ReactNode }) {
         toggleGroupExternalPlayer,
         reminderSettings,
         updateReminderSettings,
+        recordingSettings,
+        updateRecordingSettings,
         recordings,
         scheduleRecording,
         cancelRecording,

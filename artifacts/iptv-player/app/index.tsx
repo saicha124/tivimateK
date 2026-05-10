@@ -32,7 +32,7 @@ export default function HomeScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { activePlaylist, selectedChannel, currentSection, addToWatchHistory } = useIPTV();
+  const { activePlaylist, selectedChannel, currentSection, setCurrentSection, addToWatchHistory } = useIPTV();
 
   const [showAddPlaylist, setShowAddPlaylist] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
@@ -159,7 +159,11 @@ export default function HomeScreen() {
                 setManageFavoritesMode(true);
                 setViewMode("list");
               }} />
-              <EPGGrid onPlayChannel={handlePlayChannel} onCatchUp={handleCatchUp} />
+              <EPGGrid
+                onPlayChannel={handlePlayChannel}
+                onCatchUp={handleCatchUp}
+                onGoToRecordings={() => { setCurrentSection("Recordings"); setViewMode("list"); }}
+              />
             </View>
           ) : (
             /* List view */

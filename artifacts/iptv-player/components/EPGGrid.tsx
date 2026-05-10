@@ -67,10 +67,11 @@ interface ProgramBlockProps {
   refTime: number;
   isSelected: boolean;
   state: ProgramState;
+  isRecording?: boolean;
   onPress: () => void;
 }
 
-function ProgramBlock({ program, refTime, isSelected, state, onPress }: ProgramBlockProps) {
+function ProgramBlock({ program, refTime, isSelected, state, isRecording, onPress }: ProgramBlockProps) {
   const colors = useColors();
   const left = msToSlotOffset(program.startTime, refTime);
   const width = msToSlotOffset(program.endTime, refTime) - left - 2;
@@ -121,9 +122,14 @@ function ProgramBlock({ program, refTime, isSelected, state, onPress }: ProgramB
           ]}
         />
       )}
-      <Text style={[styles.programTitle, { color: titleColor }]} numberOfLines={1}>
-        {program.title}
-      </Text>
+      <View style={styles.programTitleRow}>
+        <Text style={[styles.programTitle, { color: titleColor, flex: 1 }]} numberOfLines={1}>
+          {program.title}
+        </Text>
+        {isRecording && (
+          <View style={styles.recDot} />
+        )}
+      </View>
       {width > 80 && (
         <View style={styles.programMeta}>
           {state === "past" && (
@@ -144,12 +150,13 @@ function ProgramBlock({ program, refTime, isSelected, state, onPress }: ProgramB
 interface EPGGridProps {
   onPlayChannel: (channel: Channel) => void;
   onCatchUp: (channel: Channel, program: EPGProgram) => void;
+  onGoToRecordings?: () => void;
 }
 
-export function EPGGrid({ onPlayChannel, onCatchUp }: EPGGridProps) {
+export function EPGGrid({ onPlayChannel, onCatchUp, onGoToRecordings }: EPGGridProps) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { activePlaylist, selectedGroup, selectedChannel, setSelectedChannel } = useIPTV();
+  const { activePlaylist, selectedGroup, selectedChannel, setSelectedChannel, recordings } = useIPTV();
 
   const now = Date.now();
   const [selectedDayOffset, setSelectedDayOffset] = useState(0);
@@ -300,19 +307,28 @@ export function EPGGrid({ onPlayChannel, onCatchUp }: EPGGridProps) {
             />
           )}
 
-          {dayPrograms.map((program, idx) => (
-            <ProgramBlock
-              key={idx}
-              program={program}
-              refTime={refTime}
-              isSelected={
-                sheetChannel?.id === channel.id &&
-                sheetProgram?.startTime === program.startTime
-              }
-              state={getProgramState(program, now)}
-              onPress={() => handleProgramPress(channel, program)}
-            />
-          ))}
+          {dayPrograms.map((program, idx) => {
+            const isRec = recordings.some(
+              (r) =>
+                r.channelId === channel.id &&
+                r.startTime <= program.startTime &&
+                r.endTime >= program.endTime
+            );
+            return (
+              <ProgramBlock
+                key={idx}
+                program={program}
+                refTime={refTime}
+                isSelected={
+                  sheetChannel?.id === channel.id &&
+                  sheetProgram?.startTime === program.startTime
+                }
+                state={getProgramState(program, now)}
+                isRecording={isRec}
+                onPress={() => handleProgramPress(channel, program)}
+              />
+            );
+          })}
 
           {/* Current time line — only for today */}
           {isToday && (
@@ -330,7 +346,7 @@ export function EPGGrid({ onPlayChannel, onCatchUp }: EPGGridProps) {
         </ScrollView>
       </View>
     );
-  }, [selectedChannel, sheetChannel, sheetProgram, colors, now, refTime, dayEnd, totalWidth, nowOffset, initialX, isToday, onRowScroll, handleProgramPress, onPlayChannel]);
+  }, [selectedChannel, sheetChannel, sheetProgram, colors, now, refTime, dayEnd, totalWidth, nowOffset, initialX, isToday, onRowScroll, handleProgramPress, onPlayChannel, recordings]);
 
   if (!activePlaylist || channels.length === 0) {
     return (
@@ -460,6 +476,7 @@ export function EPGGrid({ onPlayChannel, onCatchUp }: EPGGridProps) {
         onClose={() => setContextMenuChannel(null)}
         onPlay={onPlayChannel}
         onCatchUp={onCatchUp}
+        onGoToRecordings={onGoToRecordings}
       />
     </View>
   );
@@ -587,9 +604,21 @@ const styles = StyleSheet.create({
     bottom: 0,
     borderRadius: 3,
   },
+  programTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
   programTitle: {
     fontSize: 11,
     fontFamily: "Inter_500Medium",
+  },
+  recDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: "#f44336",
+    flexShrink: 0,
   },
   programMeta: {
     flexDirection: "row",
