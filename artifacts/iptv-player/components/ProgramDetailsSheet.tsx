@@ -1,6 +1,6 @@
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import React from "react";
+import React, { useState } from "react";
 import {
   Modal,
   Platform,
@@ -11,7 +11,8 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { Channel, EPGProgram } from "@/context/IPTVContext";
+import { Toast } from "@/components/Toast";
+import { Channel, EPGProgram, useIPTV } from "@/context/IPTVContext";
 import { useColors } from "@/hooks/useColors";
 
 function formatTime(ts: number) {
@@ -55,8 +56,35 @@ interface Props {
 export function ProgramDetailsSheet({ visible, channel, program, onClose, onWatchLive, onWatchCatchUp }: Props) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const { programReminders, addProgramReminder, removeProgramReminder } = useIPTV();
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastMessage, setToastMessage] = useState("");
 
   if (!channel || !program) return null;
+
+  const existingReminder = programReminders.find(
+    (r) => r.channelId === channel.id && r.startTime === program.startTime
+  );
+
+  const handleToggleReminder = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    if (existingReminder) {
+      removeProgramReminder(existingReminder.id);
+      setToastMessage("Reminder removed");
+    } else {
+      addProgramReminder({
+        channelId: channel.id,
+        channelName: channel.name,
+        channelLogo: channel.logo,
+        programTitle: program.title,
+        programDescription: program.description,
+        startTime: program.startTime,
+        endTime: program.endTime,
+      });
+      setToastMessage("Reminder is added");
+    }
+    setToastVisible(true);
+  };
 
   const progress = getProgress(program);
   const isPast = progress === 2;
@@ -199,16 +227,45 @@ export function ProgramDetailsSheet({ visible, channel, program, onClose, onWatc
             )}
 
             {isFuture && (
-              <View style={[styles.futureInfo, { backgroundColor: colors.secondary }]}>
-                <Feather name="clock" size={16} color={colors.mutedForeground} />
-                <Text style={[styles.futureText, { color: colors.mutedForeground }]}>
-                  Starts in {Math.round((program.startTime - Date.now()) / 60000)} minutes
-                </Text>
-              </View>
+              <>
+                <View style={[styles.futureInfo, { backgroundColor: colors.secondary }]}>
+                  <Feather name="clock" size={16} color={colors.mutedForeground} />
+                  <Text style={[styles.futureText, { color: colors.mutedForeground }]}>
+                    Starts in {Math.round((program.startTime - Date.now()) / 60000)} minutes
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  onPress={handleToggleReminder}
+                  style={[
+                    styles.remindAction,
+                    {
+                      backgroundColor: existingReminder ? `${colors.primary}20` : colors.secondary,
+                      borderColor: existingReminder ? colors.primary : colors.border,
+                    },
+                  ]}
+                  activeOpacity={0.85}
+                >
+                  <Feather
+                    name={existingReminder ? "bell" : "bell"}
+                    size={16}
+                    color={existingReminder ? colors.primary : colors.mutedForeground}
+                  />
+                  <Text style={[styles.remindText, { color: existingReminder ? colors.primary : colors.mutedForeground }]}>
+                    {existingReminder ? "Reminder set" : "Remind me"}
+                  </Text>
+                </TouchableOpacity>
+              </>
             )}
           </View>
         </TouchableOpacity>
       </TouchableOpacity>
+
+      <Toast
+        visible={toastVisible}
+        message={toastMessage}
+        icon="bell"
+        onHide={() => setToastVisible(false)}
+      />
     </Modal>
   );
 }
@@ -352,5 +409,18 @@ const styles = StyleSheet.create({
   futureText: {
     fontSize: 14,
     fontFamily: "Inter_400Regular",
+  },
+  remindAction: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    height: 50,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  remindText: {
+    fontSize: 15,
+    fontFamily: "Inter_600SemiBold",
   },
 });

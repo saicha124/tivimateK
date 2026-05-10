@@ -17,6 +17,7 @@ import { AddPlaylistWizard } from "@/components/AddPlaylistWizard";
 import { ChannelList } from "@/components/ChannelList";
 import { EPGGrid } from "@/components/EPGGrid";
 import { GroupList } from "@/components/GroupList";
+import { MyListView } from "@/components/MyListView";
 import { PlaylistSwitcher } from "@/components/PlaylistSwitcher";
 import { ProgramInfo } from "@/components/ProgramInfo";
 import { RecordingsList } from "@/components/RecordingsList";
@@ -31,7 +32,7 @@ export default function HomeScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { activePlaylist, selectedChannel, currentSection } = useIPTV();
+  const { activePlaylist, selectedChannel, currentSection, addToWatchHistory } = useIPTV();
 
   const [showAddPlaylist, setShowAddPlaylist] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
@@ -41,6 +42,13 @@ export default function HomeScreen() {
 
   const handlePlayChannel = (channel: Channel) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    addToWatchHistory({
+      channelId: channel.id,
+      channelName: channel.name,
+      channelGroup: channel.group,
+      channelLogo: channel.logo,
+      channelUrl: channel.url,
+    });
     router.push({ pathname: "/player", params: { url: channel.url, name: channel.name, channelId: channel.id } });
   };
 
@@ -138,6 +146,12 @@ export default function HomeScreen() {
                 router.push({ pathname: "/player", params: { url, name } });
               }} />
             </View>
+          ) : currentSection === "My List" ? (
+            /* My List view with subsections */
+            <MyListView
+              onPlayChannel={handlePlayChannel}
+              onPlayVOD={(url, name) => router.push({ pathname: "/player", params: { url, name } })}
+            />
           ) : viewMode === "epg" && currentSection === "TV" ? (
             /* EPG Grid view */
             <View style={styles.epgContainer}>

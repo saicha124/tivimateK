@@ -82,6 +82,27 @@ export interface Recording {
   createdAt: number;
 }
 
+export interface ProgramReminder {
+  id: string;
+  channelId: string;
+  channelName: string;
+  channelLogo?: string;
+  programTitle: string;
+  programDescription?: string;
+  startTime: number;
+  endTime: number;
+  createdAt: number;
+}
+
+export interface WatchHistoryItem {
+  channelId: string;
+  channelName: string;
+  channelGroup: string;
+  channelLogo?: string;
+  channelUrl: string;
+  watchedAt: number;
+}
+
 interface IPTVContextValue {
   playlists: Playlist[];
   activePlaylist: Playlist | null;
@@ -113,6 +134,12 @@ interface IPTVContextValue {
   recordings: Recording[];
   scheduleRecording: (recording: Omit<Recording, "id" | "createdAt">) => void;
   cancelRecording: (id: string) => void;
+  programReminders: ProgramReminder[];
+  addProgramReminder: (reminder: Omit<ProgramReminder, "id" | "createdAt">) => void;
+  removeProgramReminder: (id: string) => void;
+  watchHistory: WatchHistoryItem[];
+  addToWatchHistory: (item: Omit<WatchHistoryItem, "watchedAt">) => void;
+  clearWatchHistory: () => void;
   addPlaylist: (playlist: Omit<Playlist, "id" | "channels" | "movies" | "shows" | "lastUpdated">) => Promise<void>;
   removePlaylist: (id: string) => void;
   isLoading: boolean;
@@ -215,6 +242,8 @@ export function IPTVProvider({ children }: { children: React.ReactNode }) {
   const [hiddenGroups, setHiddenGroups] = useState<string[]>([]);
   const [favoritesOnlyGroups, setFavoritesOnlyGroups] = useState<string[]>([]);
   const [recordings, setRecordings] = useState<Recording[]>([]);
+  const [programReminders, setProgramReminders] = useState<ProgramReminder[]>([]);
+  const [watchHistory, setWatchHistory] = useState<WatchHistoryItem[]>([]);
   const [groupSortOrders, setGroupSortOrdersState] = useState<Record<string, GroupSortOrder>>({});
   const [groupEpgOffsets, setGroupEpgOffsetsState] = useState<Record<string, number>>({});
   const [groupExternalPlayer, setGroupExternalPlayer] = useState<string[]>([]);
@@ -243,6 +272,10 @@ export function IPTVProvider({ children }: { children: React.ReactNode }) {
         if (favOnly) setFavoritesOnlyGroups(JSON.parse(favOnly));
         const recs = await AsyncStorage.getItem("recordings");
         if (recs) setRecordings(JSON.parse(recs));
+        const progRems = await AsyncStorage.getItem("programReminders");
+        if (progRems) setProgramReminders(JSON.parse(progRems));
+        const hist = await AsyncStorage.getItem("watchHistory");
+        if (hist) setWatchHistory(JSON.parse(hist));
         const sortOrders = await AsyncStorage.getItem("groupSortOrders");
         if (sortOrders) setGroupSortOrdersState(JSON.parse(sortOrders));
         const epgOffsets = await AsyncStorage.getItem("groupEpgOffsets");
@@ -364,6 +397,41 @@ export function IPTVProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  const addProgramReminder = useCallback((reminder: Omit<ProgramReminder, "id" | "createdAt">) => {
+    setProgramReminders((prev) => {
+      const exists = prev.some((r) => r.channelId === reminder.channelId && r.startTime === reminder.startTime);
+      if (exists) return prev;
+      const next = [
+        ...prev,
+        { ...reminder, id: Date.now().toString() + Math.random().toString(36).substr(2, 6), createdAt: Date.now() },
+      ];
+      AsyncStorage.setItem("programReminders", JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const removeProgramReminder = useCallback((id: string) => {
+    setProgramReminders((prev) => {
+      const next = prev.filter((r) => r.id !== id);
+      AsyncStorage.setItem("programReminders", JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const addToWatchHistory = useCallback((item: Omit<WatchHistoryItem, "watchedAt">) => {
+    setWatchHistory((prev) => {
+      const filtered = prev.filter((h) => h.channelId !== item.channelId);
+      const next = [{ ...item, watchedAt: Date.now() }, ...filtered].slice(0, 50);
+      AsyncStorage.setItem("watchHistory", JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const clearWatchHistory = useCallback(() => {
+    setWatchHistory([]);
+    AsyncStorage.removeItem("watchHistory");
+  }, []);
+
   const addPlaylist = useCallback(
     async (data: Omit<Playlist, "id" | "channels" | "movies" | "shows" | "lastUpdated">) => {
       setIsLoading(true);
@@ -468,6 +536,12 @@ export function IPTVProvider({ children }: { children: React.ReactNode }) {
         recordings,
         scheduleRecording,
         cancelRecording,
+        programReminders,
+        addProgramReminder,
+        removeProgramReminder,
+        watchHistory,
+        addToWatchHistory,
+        clearWatchHistory,
         addPlaylist,
         removePlaylist,
         isLoading,
