@@ -1,0 +1,27 @@
+kind = "mobile"
+previewPath = "/"
+title = "IPTV Player"
+version = "1.0.0"
+id = "artifacts/iptv-player"
+router = "expo-domain"
+
+[[integratedSkills]]
+name = "expo"
+version = "1.0.0"
+
+[[services]]
+ensurePreviewReachable = "/status"
+name = "expo"
+paths = [ "/" ]
+localPort = 23404
+
+[services.development]
+run = "pnpm --filter @workspace/iptv-player run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/iptv-player", "run", "build" ]
+run = [ "pnpm", "--filter", "@workspace/iptv-player", "run", "serve" ]
+
+[services.env]
+PORT = "23404"
+BASE_PATH = "/"
