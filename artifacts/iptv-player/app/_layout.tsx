@@ -15,6 +15,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { IPTVProvider } from "@/context/IPTVContext";
+import { ParentalProvider } from "@/context/ParentalContext";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -52,9 +53,11 @@ export default function RootLayout() {
         <QueryClientProvider client={queryClient}>
           <GestureHandlerRootView style={{ flex: 1 }}>
             <KeyboardProvider>
-              <IPTVProvider>
-                <RootLayoutNav />
-              </IPTVProvider>
+              <ParentalProvider>
+                <IPTVProvider>
+                  <RootLayoutNav />
+                </IPTVProvider>
+              </ParentalProvider>
             </KeyboardProvider>
           </GestureHandlerRootView>
         </QueryClientProvider>
