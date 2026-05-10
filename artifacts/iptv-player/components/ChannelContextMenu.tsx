@@ -14,6 +14,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { CatchUpSheet } from "@/components/CatchUpSheet";
+import { ScheduleRecordingSheet } from "@/components/ScheduleRecordingSheet";
 import { Channel, EPGProgram, useIPTV } from "@/context/IPTVContext";
 import { useColors } from "@/hooks/useColors";
 
@@ -31,6 +32,7 @@ interface MenuOption {
   color?: string;
   action: () => void;
   dividerBefore?: boolean;
+  chevron?: boolean;
 }
 
 export function ChannelContextMenu({ channel, visible, onClose, onPlay, onCatchUp }: ChannelContextMenuProps) {
@@ -38,6 +40,7 @@ export function ChannelContextMenu({ channel, visible, onClose, onPlay, onCatchU
   const insets = useSafeAreaInsets();
   const { favorites, toggleFavorite, blockedChannels, toggleBlockChannel, hiddenChannels, toggleHideChannel } = useIPTV();
   const [showCatchUp, setShowCatchUp] = useState(false);
+  const [showRecord, setShowRecord] = useState(false);
 
   if (!channel) return null;
 
@@ -46,24 +49,27 @@ export function ChannelContextMenu({ channel, visible, onClose, onPlay, onCatchU
   const isHidden = hiddenChannels.includes(channel.id);
   const hasCatchUp = (channel.epg ?? []).some((p) => p.startTime < Date.now());
 
+  const nowProgram = channel.epg?.find(
+    (p) => p.startTime <= Date.now() && p.endTime >= Date.now()
+  );
+  const nextProgram = channel.epg
+    ?.filter((p) => p.startTime > Date.now())
+    .sort((a, b) => a.startTime - b.startTime)[0];
+  const recordProgram = nowProgram ?? nextProgram ?? null;
+
   const options: MenuOption[] = [
     {
       label: "Play",
       icon: "play-circle",
       color: colors.primary,
-      action: () => {
-        onClose();
-        onPlay(channel);
-      },
+      action: () => { onClose(); onPlay(channel); },
     },
     {
       label: "Catch-Up / Replay",
       icon: "rotate-ccw",
       color: hasCatchUp ? colors.foreground : colors.mutedForeground,
-      action: () => {
-        if (!hasCatchUp) return;
-        setShowCatchUp(true);
-      },
+      chevron: hasCatchUp,
+      action: () => { if (!hasCatchUp) return; setShowCatchUp(true); },
       dividerBefore: true,
     },
     {
@@ -72,15 +78,10 @@ export function ChannelContextMenu({ channel, visible, onClose, onPlay, onCatchU
       action: () => { onClose(); },
     },
     {
-      label: "Record",
+      label: recordProgram ? `Record: ${recordProgram.title}` : "Record",
       icon: "circle",
       color: "#f44336",
-      action: () => { onClose(); },
-    },
-    {
-      label: "Custom recording",
-      icon: "video",
-      action: () => { onClose(); },
+      action: () => { setShowRecord(true); },
     },
     {
       label: isFav ? "Remove from My List" : "Add to My List",
@@ -135,7 +136,7 @@ export function ChannelContextMenu({ channel, visible, onClose, onPlay, onCatchU
   return (
     <>
       <Modal
-        visible={visible && !showCatchUp}
+        visible={visible && !showCatchUp && !showRecord}
         transparent
         animationType="fade"
         onRequestClose={onClose}
@@ -145,7 +146,6 @@ export function ChannelContextMenu({ channel, visible, onClose, onPlay, onCatchU
           <View style={styles.overlay}>
             <TouchableWithoutFeedback>
               <View style={[styles.sheet, { backgroundColor: colors.card, paddingBottom: bottomPad + 8 }]}>
-                {/* Header */}
                 <View style={[styles.header, { borderBottomColor: colors.border }]}>
                   <Text style={[styles.channelTitle, { color: colors.primary }]} numberOfLines={1}>
                     {channel.name}
@@ -174,10 +174,10 @@ export function ChannelContextMenu({ channel, visible, onClose, onPlay, onCatchU
                           color={opt.color ?? colors.foreground}
                           style={styles.optionIcon}
                         />
-                        <Text style={[styles.optionLabel, { color: opt.color ?? colors.foreground }]}>
+                        <Text style={[styles.optionLabel, { color: opt.color ?? colors.foreground }]} numberOfLines={1}>
                           {opt.label}
                         </Text>
-                        {opt.label === "Catch-Up / Replay" && hasCatchUp && (
+                        {opt.chevron && (
                           <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
                         )}
                       </TouchableOpacity>
@@ -193,15 +193,15 @@ export function ChannelContextMenu({ channel, visible, onClose, onPlay, onCatchU
       <CatchUpSheet
         channel={channel}
         visible={showCatchUp}
-        onClose={() => {
-          setShowCatchUp(false);
-          onClose();
-        }}
-        onPlay={(ch, program) => {
-          setShowCatchUp(false);
-          onClose();
-          onCatchUp(ch, program);
-        }}
+        onClose={() => { setShowCatchUp(false); onClose(); }}
+        onPlay={(ch, program) => { setShowCatchUp(false); onClose(); onCatchUp(ch, program); }}
+      />
+
+      <ScheduleRecordingSheet
+        channel={channel}
+        program={recordProgram}
+        visible={showRecord}
+        onClose={() => { setShowRecord(false); onClose(); }}
       />
     </>
   );

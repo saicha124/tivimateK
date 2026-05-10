@@ -52,6 +52,20 @@ export interface Playlist {
 
 export type Section = "TV" | "Movies" | "Shows" | "My List" | "Recordings";
 
+export interface Recording {
+  id: string;
+  channelId: string;
+  channelName: string;
+  channelLogo?: string;
+  channelGroup?: string;
+  programTitle: string;
+  programDescription?: string;
+  startTime: number;
+  endTime: number;
+  url: string;
+  createdAt: number;
+}
+
 interface IPTVContextValue {
   playlists: Playlist[];
   activePlaylist: Playlist | null;
@@ -72,6 +86,9 @@ interface IPTVContextValue {
   toggleHideGroup: (group: string) => void;
   favoritesOnlyGroups: string[];
   toggleFavoritesOnlyGroup: (group: string) => void;
+  recordings: Recording[];
+  scheduleRecording: (recording: Omit<Recording, "id" | "createdAt">) => void;
+  cancelRecording: (id: string) => void;
   addPlaylist: (playlist: Omit<Playlist, "id" | "channels" | "movies" | "shows" | "lastUpdated">) => Promise<void>;
   removePlaylist: (id: string) => void;
   isLoading: boolean;
@@ -173,6 +190,7 @@ export function IPTVProvider({ children }: { children: React.ReactNode }) {
   const [hiddenChannels, setHiddenChannels] = useState<string[]>([]);
   const [hiddenGroups, setHiddenGroups] = useState<string[]>([]);
   const [favoritesOnlyGroups, setFavoritesOnlyGroups] = useState<string[]>([]);
+  const [recordings, setRecordings] = useState<Recording[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState("");
 
@@ -195,6 +213,8 @@ export function IPTVProvider({ children }: { children: React.ReactNode }) {
         if (hiddenGrps) setHiddenGroups(JSON.parse(hiddenGrps));
         const favOnly = await AsyncStorage.getItem("favoritesOnlyGroups");
         if (favOnly) setFavoritesOnlyGroups(JSON.parse(favOnly));
+        const recs = await AsyncStorage.getItem("recordings");
+        if (recs) setRecordings(JSON.parse(recs));
       } catch {}
     })();
   }, []);
@@ -251,6 +271,25 @@ export function IPTVProvider({ children }: { children: React.ReactNode }) {
         ? prev.filter((g) => g !== group)
         : [...prev, group];
       AsyncStorage.setItem("favoritesOnlyGroups", JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const scheduleRecording = useCallback((recording: Omit<Recording, "id" | "createdAt">) => {
+    setRecordings((prev) => {
+      const next = [
+        ...prev,
+        { ...recording, id: Date.now().toString() + Math.random().toString(36).substr(2, 6), createdAt: Date.now() },
+      ];
+      AsyncStorage.setItem("recordings", JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const cancelRecording = useCallback((id: string) => {
+    setRecordings((prev) => {
+      const next = prev.filter((r) => r.id !== id);
+      AsyncStorage.setItem("recordings", JSON.stringify(next));
       return next;
     });
   }, []);
@@ -348,6 +387,9 @@ export function IPTVProvider({ children }: { children: React.ReactNode }) {
         toggleHideGroup,
         favoritesOnlyGroups,
         toggleFavoritesOnlyGroup,
+        recordings,
+        scheduleRecording,
+        cancelRecording,
         addPlaylist,
         removePlaylist,
         isLoading,

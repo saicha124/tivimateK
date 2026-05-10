@@ -19,6 +19,7 @@ import { EPGGrid } from "@/components/EPGGrid";
 import { GroupList } from "@/components/GroupList";
 import { PlaylistSwitcher } from "@/components/PlaylistSwitcher";
 import { ProgramInfo } from "@/components/ProgramInfo";
+import { RecordingsList } from "@/components/RecordingsList";
 import { SearchModal } from "@/components/SearchModal";
 import { Sidebar } from "@/components/Sidebar";
 import { Channel, EPGProgram, useIPTV } from "@/context/IPTVContext";
@@ -130,7 +131,14 @@ export default function HomeScreen() {
             showEPGToggle={currentSection === "TV"}
           />
 
-          {viewMode === "epg" && currentSection === "TV" ? (
+          {currentSection === "Recordings" ? (
+            /* Recordings view */
+            <View style={styles.recordingsContainer}>
+              <RecordingsList onPlay={(url, name) => {
+                router.push({ pathname: "/player", params: { url, name } });
+              }} />
+            </View>
+          ) : viewMode === "epg" && currentSection === "TV" ? (
             /* EPG Grid view */
             <View style={styles.epgContainer}>
               <GroupList onManageFavorites={() => {
@@ -306,6 +314,9 @@ const styles = StyleSheet.create({
   toggleLabel: {
     fontSize: 12,
     fontFamily: "Inter_500Medium",
+  },
+  recordingsContainer: {
+    flex: 1,
   },
   epgContainer: {
     flex: 1,

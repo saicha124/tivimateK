@@ -1,6 +1,6 @@
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import React from "react";
+import React, { useMemo } from "react";
 import {
   Platform,
   StyleSheet,
@@ -33,13 +33,35 @@ interface SidebarProps {
   onSwitchPlaylist: () => void;
 }
 
+function getRecordingStatus(startTime: number, endTime: number, now: number) {
+  if (endTime < now) return "completed";
+  if (startTime <= now) return "recording";
+  return "scheduled";
+}
+
 export function Sidebar({ onSearch, onSettings, onSwitchPlaylist }: SidebarProps) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { currentSection, setCurrentSection, activePlaylist, playlists } = useIPTV();
+  const { currentSection, setCurrentSection, activePlaylist, playlists, recordings } = useIPTV();
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
+
+  const now = Date.now();
+
+  const { activeCount, scheduledCount } = useMemo(() => {
+    let activeCount = 0;
+    let scheduledCount = 0;
+    for (const r of recordings) {
+      const s = getRecordingStatus(r.startTime, r.endTime, now);
+      if (s === "recording") activeCount++;
+      else if (s === "scheduled") scheduledCount++;
+    }
+    return { activeCount, scheduledCount };
+  }, [recordings, now]);
+
+  const recordingsBadge = activeCount > 0 ? activeCount : scheduledCount > 0 ? scheduledCount : 0;
+  const recordingsBadgeColor = activeCount > 0 ? "#f44336" : colors.primary;
 
   return (
     <View
@@ -83,14 +105,12 @@ export function Sidebar({ onSearch, onSettings, onSwitchPlaylist }: SidebarProps
         <Feather name="chevron-down" size={12} color={colors.mutedForeground} />
       </TouchableOpacity>
 
-      {/* Playlist count indicator */}
       {playlists.length > 1 && (
         <Text style={[styles.playlistCount, { color: colors.mutedForeground }]}>
           {playlists.length} playlists
         </Text>
       )}
 
-      {/* Divider */}
       <View style={[styles.divider, { backgroundColor: colors.border }]} />
 
       {/* Search */}
@@ -112,6 +132,9 @@ export function Sidebar({ onSearch, onSettings, onSwitchPlaylist }: SidebarProps
       <View style={styles.navItems}>
         {ITEMS.map((item) => {
           const active = item.section === currentSection;
+          const isRecordings = item.section === "Recordings";
+          const badge = isRecordings ? recordingsBadge : 0;
+
           return (
             <TouchableOpacity
               key={item.section}
@@ -125,17 +148,25 @@ export function Sidebar({ onSearch, onSettings, onSwitchPlaylist }: SidebarProps
               ]}
               activeOpacity={0.7}
             >
-              <Feather
-                name={item.icon}
-                size={19}
-                color={active ? colors.primary : colors.mutedForeground}
-              />
+              <View style={{ position: "relative" }}>
+                <Feather
+                  name={item.icon}
+                  size={19}
+                  color={active ? colors.primary : colors.mutedForeground}
+                />
+                {badge > 0 && (
+                  <View style={[styles.badge, { backgroundColor: recordingsBadgeColor }]}>
+                    <Text style={styles.badgeText}>{badge > 9 ? "9+" : badge}</Text>
+                  </View>
+                )}
+              </View>
               <Text
                 style={[
                   styles.itemLabel,
                   {
                     color: active ? colors.foreground : colors.mutedForeground,
                     fontFamily: active ? "Inter_600SemiBold" : "Inter_400Regular",
+                    flex: 1,
                   },
                 ]}
               >
@@ -246,7 +277,22 @@ const styles = StyleSheet.create({
   },
   itemLabel: {
     fontSize: 12,
-    flex: 1,
+  },
+  badge: {
+    position: "absolute",
+    top: -4,
+    right: -5,
+    minWidth: 14,
+    height: 14,
+    borderRadius: 7,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 2,
+  },
+  badgeText: {
+    color: "#fff",
+    fontSize: 8,
+    fontFamily: "Inter_700Bold",
   },
   activeBar: {
     position: "absolute",

@@ -1,6 +1,6 @@
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import {
   FlatList,
   Modal,
@@ -13,6 +13,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { ScheduleRecordingSheet } from "@/components/ScheduleRecordingSheet";
 import { Channel, EPGProgram } from "@/context/IPTVContext";
 import { useColors } from "@/hooks/useColors";
 
@@ -28,7 +29,6 @@ function formatDate(ts: number) {
   const today = new Date();
   const yesterday = new Date();
   yesterday.setDate(today.getDate() - 1);
-
   if (d.toDateString() === today.toDateString()) return "Today";
   if (d.toDateString() === yesterday.toDateString()) return "Yesterday";
   return d.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
@@ -60,14 +60,13 @@ export function CatchUpSheet({ channel, visible, onClose, onPlay }: CatchUpSheet
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const now = Date.now();
+  const [recordProgram, setRecordProgram] = useState<EPGProgram | null>(null);
 
   const programs = useMemo((): ProgramWithDay[] => {
     if (!channel?.epg) return [];
-
     const past = channel.epg
       .filter((p) => p.startTime < now + 60000)
       .sort((a, b) => b.startTime - a.startTime);
-
     const seenDays = new Set<string>();
     return past.map((program) => {
       const dayLabel = formatDate(program.startTime);
@@ -82,139 +81,165 @@ export function CatchUpSheet({ channel, visible, onClose, onPlay }: CatchUpSheet
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="slide"
-      onRequestClose={onClose}
-      statusBarTranslucent
-    >
-      <TouchableWithoutFeedback onPress={onClose}>
-        <View style={styles.overlay}>
-          <TouchableWithoutFeedback>
-            <View style={[styles.sheet, { backgroundColor: colors.card, paddingBottom: bottomPad }]}>
-              {/* Header */}
-              <View style={[styles.header, { borderBottomColor: colors.border }]}>
-                <View style={styles.headerLeft}>
-                  <Feather name="rotate-ccw" size={16} color={colors.primary} />
-                  <Text style={[styles.headerTitle, { color: colors.foreground }]}>
-                    Catch-Up
+    <>
+      <Modal
+        visible={visible && !recordProgram}
+        transparent
+        animationType="slide"
+        onRequestClose={onClose}
+        statusBarTranslucent
+      >
+        <TouchableWithoutFeedback onPress={onClose}>
+          <View style={styles.overlay}>
+            <TouchableWithoutFeedback>
+              <View style={[styles.sheet, { backgroundColor: colors.card, paddingBottom: bottomPad }]}>
+                <View style={[styles.header, { borderBottomColor: colors.border }]}>
+                  <View style={styles.headerLeft}>
+                    <Feather name="rotate-ccw" size={16} color={colors.primary} />
+                    <Text style={[styles.headerTitle, { color: colors.foreground }]}>
+                      Catch-Up
+                    </Text>
+                  </View>
+                  <Text style={[styles.channelName, { color: colors.primary }]} numberOfLines={1}>
+                    {channel.name}
                   </Text>
+                  <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                    <Feather name="x" size={20} color={colors.mutedForeground} />
+                  </TouchableOpacity>
                 </View>
-                <Text style={[styles.channelName, { color: colors.primary }]} numberOfLines={1}>
-                  {channel.name}
-                </Text>
-                <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                  <Feather name="x" size={20} color={colors.mutedForeground} />
-                </TouchableOpacity>
-              </View>
 
-              {programs.length === 0 ? (
-                <View style={styles.empty}>
-                  <Feather name="calendar" size={40} color={colors.mutedForeground} style={{ marginBottom: 12 }} />
-                  <Text style={[styles.emptyTitle, { color: colors.foreground }]}>No catch-up available</Text>
-                  <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
-                    This channel has no EPG archive data
-                  </Text>
-                </View>
-              ) : (
-                <FlatList
-                  data={programs}
-                  keyExtractor={(item) => String(item.program.startTime)}
-                  showsVerticalScrollIndicator={false}
-                  renderItem={({ item: { program, dayLabel, isFirstOfDay } }) => {
-                    const prog = programProgress(program);
-                    const isLive = prog !== null;
-                    const isPast = program.endTime < now;
+                {programs.length === 0 ? (
+                  <View style={styles.empty}>
+                    <Feather name="calendar" size={40} color={colors.mutedForeground} style={{ marginBottom: 12 }} />
+                    <Text style={[styles.emptyTitle, { color: colors.foreground }]}>No catch-up available</Text>
+                    <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
+                      This channel has no EPG archive data
+                    </Text>
+                  </View>
+                ) : (
+                  <FlatList
+                    data={programs}
+                    keyExtractor={(item) => String(item.program.startTime)}
+                    showsVerticalScrollIndicator={false}
+                    renderItem={({ item: { program, dayLabel, isFirstOfDay } }) => {
+                      const prog = programProgress(program);
+                      const isLive = prog !== null;
+                      const isPast = program.endTime < now;
 
-                    return (
-                      <>
-                        {isFirstOfDay && (
-                          <View style={[styles.dayHeader, { backgroundColor: colors.secondary }]}>
-                            <Text style={[styles.dayLabel, { color: colors.mutedForeground }]}>
-                              {dayLabel}
-                            </Text>
-                          </View>
-                        )}
-                        <TouchableOpacity
-                          onPress={() => {
-                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                            onClose();
-                            onPlay(channel, program);
-                          }}
-                          style={[
-                            styles.item,
-                            { borderBottomColor: colors.border },
-                            isLive && { backgroundColor: colors.highlight },
-                          ]}
-                          activeOpacity={0.7}
-                        >
-                          <View style={styles.timeCol}>
-                            <Text style={[styles.timeText, { color: isLive ? colors.primary : colors.mutedForeground }]}>
-                              {formatTime(program.startTime)}
-                            </Text>
-                            <Text style={[styles.durationText, { color: colors.mutedForeground }]}>
-                              {formatDuration(program.startTime, program.endTime)}
-                            </Text>
-                          </View>
-
-                          <View style={styles.infoCol}>
-                            <View style={styles.titleRow}>
-                              {isLive && (
-                                <View style={[styles.liveBadge, { backgroundColor: "#f44336" }]}>
-                                  <Text style={styles.liveBadgeText}>LIVE</Text>
-                                </View>
-                              )}
-                              <Text
-                                style={[
-                                  styles.programTitle,
-                                  { color: isLive ? colors.foreground : isPast ? colors.mutedForeground : colors.foreground },
-                                  isLive && { fontFamily: "Inter_600SemiBold" },
-                                ]}
-                                numberOfLines={2}
-                              >
-                                {program.title}
+                      return (
+                        <>
+                          {isFirstOfDay && (
+                            <View style={[styles.dayHeader, { backgroundColor: colors.secondary }]}>
+                              <Text style={[styles.dayLabel, { color: colors.mutedForeground }]}>
+                                {dayLabel}
                               </Text>
                             </View>
-                            {program.description ? (
-                              <Text style={[styles.description, { color: colors.mutedForeground }]} numberOfLines={1}>
-                                {program.description}
+                          )}
+                          <TouchableOpacity
+                            onPress={() => {
+                              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                              onClose();
+                              onPlay(channel, program);
+                            }}
+                            style={[
+                              styles.item,
+                              { borderBottomColor: colors.border },
+                              isLive && { backgroundColor: colors.highlight },
+                            ]}
+                            activeOpacity={0.7}
+                          >
+                            <View style={styles.timeCol}>
+                              <Text style={[styles.timeText, { color: isLive ? colors.primary : colors.mutedForeground }]}>
+                                {formatTime(program.startTime)}
                               </Text>
-                            ) : null}
-                            {isLive && prog !== null && (
-                              <View style={[styles.progressBar, { backgroundColor: colors.progressBg }]}>
-                                <View
-                                  style={[
-                                    styles.progressFill,
-                                    { backgroundColor: colors.primary, width: `${prog * 100}%` },
-                                  ]}
-                                />
-                              </View>
-                            )}
-                          </View>
+                              <Text style={[styles.durationText, { color: colors.mutedForeground }]}>
+                                {formatDuration(program.startTime, program.endTime)}
+                              </Text>
+                            </View>
 
-                          <View style={styles.playCol}>
-                            {(isPast || isLive) && (
-                              <View style={[styles.playBtn, { backgroundColor: isLive ? colors.primary : colors.secondary }]}>
-                                <Feather
-                                  name={isLive ? "play" : "rotate-ccw"}
-                                  size={14}
-                                  color={isLive ? "#fff" : colors.mutedForeground}
-                                />
+                            <View style={styles.infoCol}>
+                              <View style={styles.titleRow}>
+                                {isLive && (
+                                  <View style={[styles.liveBadge, { backgroundColor: "#f44336" }]}>
+                                    <Text style={styles.liveBadgeText}>LIVE</Text>
+                                  </View>
+                                )}
+                                <Text
+                                  style={[
+                                    styles.programTitle,
+                                    { color: isLive ? colors.foreground : isPast ? colors.mutedForeground : colors.foreground },
+                                    isLive && { fontFamily: "Inter_600SemiBold" },
+                                  ]}
+                                  numberOfLines={2}
+                                >
+                                  {program.title}
+                                </Text>
                               </View>
-                            )}
-                          </View>
-                        </TouchableOpacity>
-                      </>
-                    );
-                  }}
-                />
-              )}
-            </View>
-          </TouchableWithoutFeedback>
-        </View>
-      </TouchableWithoutFeedback>
-    </Modal>
+                              {program.description ? (
+                                <Text style={[styles.description, { color: colors.mutedForeground }]} numberOfLines={1}>
+                                  {program.description}
+                                </Text>
+                              ) : null}
+                              {isLive && prog !== null && (
+                                <View style={[styles.progressBar, { backgroundColor: colors.progressBg }]}>
+                                  <View
+                                    style={[
+                                      styles.progressFill,
+                                      { backgroundColor: colors.primary, width: `${prog * 100}%` },
+                                    ]}
+                                  />
+                                </View>
+                              )}
+                            </View>
+
+                            <View style={styles.rightCol}>
+                              {(isPast || isLive) && (
+                                <TouchableOpacity
+                                  onPress={() => {
+                                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                                    onClose();
+                                    onPlay(channel, program);
+                                  }}
+                                  style={[styles.playBtn, { backgroundColor: isLive ? colors.primary : colors.secondary }]}
+                                >
+                                  <Feather
+                                    name={isLive ? "play" : "rotate-ccw"}
+                                    size={13}
+                                    color={isLive ? "#fff" : colors.mutedForeground}
+                                  />
+                                </TouchableOpacity>
+                              )}
+                              <TouchableOpacity
+                                onPress={(e) => {
+                                  e.stopPropagation();
+                                  Haptics.selectionAsync();
+                                  setRecordProgram(program);
+                                }}
+                                style={[styles.recBtn, { backgroundColor: `#f4433618`, borderColor: `#f4433630` }]}
+                                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                              >
+                                <Feather name="circle" size={13} color="#f44336" />
+                              </TouchableOpacity>
+                            </View>
+                          </TouchableOpacity>
+                        </>
+                      );
+                    }}
+                  />
+                )}
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
+
+      <ScheduleRecordingSheet
+        channel={channel}
+        program={recordProgram}
+        visible={!!recordProgram}
+        onClose={() => setRecordProgram(null)}
+      />
+    </>
   );
 }
 
@@ -343,10 +368,11 @@ const styles = StyleSheet.create({
     height: 3,
     borderRadius: 2,
   },
-  playCol: {
+  rightCol: {
     width: 32,
     alignItems: "center",
     paddingTop: 2,
+    gap: 6,
   },
   playBtn: {
     width: 30,
@@ -354,5 +380,13 @@ const styles = StyleSheet.create({
     borderRadius: 15,
     justifyContent: "center",
     alignItems: "center",
+  },
+  recBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 1,
   },
 });
