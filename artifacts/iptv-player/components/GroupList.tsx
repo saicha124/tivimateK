@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { GroupContextMenu } from "@/components/GroupContextMenu";
 import { PinPad } from "@/components/PinPad";
 import { Channel, VODItem, useIPTV } from "@/context/IPTVContext";
 import { useParental } from "@/context/ParentalContext";
@@ -20,32 +21,47 @@ function getGroups(
   section: string,
   channels: Channel[],
   movies: VODItem[],
-  shows: VODItem[]
+  shows: VODItem[],
+  hiddenGroups: string[]
 ): string[] {
   if (section === "My List") return ["Favorites"];
-  if (section === "Movies") return Array.from(new Set(movies.map((m) => m.category))).sort();
-  if (section === "Shows") return Array.from(new Set(shows.map((s) => s.category))).sort();
-  if (section === "TV") return Array.from(new Set(channels.map((c) => c.group))).sort();
-  return [];
+  let groups: string[] = [];
+  if (section === "Movies") groups = Array.from(new Set(movies.map((m) => m.category))).sort();
+  else if (section === "Shows") groups = Array.from(new Set(shows.map((s) => s.category))).sort();
+  else if (section === "TV") groups = Array.from(new Set(channels.map((c) => c.group))).sort();
+  return groups.filter((g) => !hiddenGroups.includes(g));
 }
 
 export function GroupList() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { activePlaylist, currentSection, selectedGroup, setSelectedGroup, setSelectedChannel } = useIPTV();
+  const {
+    activePlaylist,
+    currentSection,
+    selectedGroup,
+    setSelectedGroup,
+    setSelectedChannel,
+    favorites,
+    hiddenGroups,
+  } = useIPTV();
   const { isGroupLocked, unlockForSession, verifyPin } = useParental();
 
   const [pendingGroup, setPendingGroup] = useState<string | null>(null);
   const [showPin, setShowPin] = useState(false);
+  const [contextGroup, setContextGroup] = useState<string | null>(null);
+  const [manageFavGroup, setManageFavGroup] = useState<string | null>(null);
+
+  const hasFavorites = favorites.length > 0 && currentSection === "TV";
 
   const groups = useMemo(
     () => getGroups(
       currentSection,
       activePlaylist?.channels ?? [],
       activePlaylist?.movies ?? [],
-      activePlaylist?.shows ?? []
+      activePlaylist?.shows ?? [],
+      hiddenGroups
     ),
-    [currentSection, activePlaylist]
+    [currentSection, activePlaylist, hiddenGroups]
   );
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
@@ -62,6 +78,11 @@ export function GroupList() {
     }
   };
 
+  const handleLongPress = (group: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setContextGroup(group);
+  };
+
   const handlePinSuccess = () => {
     if (pendingGroup) {
       unlockForSession(pendingGroup);
@@ -71,6 +92,13 @@ export function GroupList() {
     setShowPin(false);
     setPendingGroup(null);
   };
+
+  const listData = useMemo(() => {
+    const items: Array<{ key: string; isFavHeader?: boolean }> = [];
+    if (hasFavorites) items.push({ key: "__favorites__", isFavHeader: true });
+    groups.forEach((g) => items.push({ key: g }));
+    return items;
+  }, [groups, hasFavorites]);
 
   return (
     <View
@@ -88,17 +116,47 @@ export function GroupList() {
       </Text>
 
       <FlatList
-        data={groups}
-        keyExtractor={(item) => item}
-        scrollEnabled={groups.length > 0}
+        data={listData}
+        keyExtractor={(item) => item.key}
+        scrollEnabled={listData.length > 0}
         showsVerticalScrollIndicator={false}
-        renderItem={({ item: group }) => {
+        renderItem={({ item }) => {
+          if (item.isFavHeader) {
+            const active = selectedGroup === "__favorites__";
+            return (
+              <TouchableOpacity
+                onPress={() => handleSelect("__favorites__")}
+                style={[
+                  styles.groupItem,
+                  active && { backgroundColor: colors.highlight },
+                ]}
+                activeOpacity={0.7}
+              >
+                <Feather name="star" size={12} color="#FFC107" style={{ marginRight: 4 }} />
+                <Text
+                  style={[
+                    styles.groupText,
+                    {
+                      color: active ? colors.primary : colors.foreground,
+                      fontFamily: active ? "Inter_600SemiBold" : "Inter_500Medium",
+                      flex: 1,
+                    },
+                  ]}
+                >
+                  Favorites
+                </Text>
+              </TouchableOpacity>
+            );
+          }
+
+          const group = item.key;
           const active = selectedGroup === group;
           const locked = isGroupLocked(group);
 
           return (
             <TouchableOpacity
               onPress={() => handleSelect(group)}
+              onLongPress={() => handleLongPress(group)}
               style={[
                 styles.groupItem,
                 active && { backgroundColor: colors.highlight },
@@ -138,6 +196,13 @@ export function GroupList() {
         onSuccess={handlePinSuccess}
         onCancel={() => { setShowPin(false); setPendingGroup(null); }}
         onVerify={verifyPin}
+      />
+
+      <GroupContextMenu
+        group={contextGroup}
+        visible={!!contextGroup}
+        onClose={() => setContextGroup(null)}
+        onManageFavorites={(g) => setManageFavGroup(g)}
       />
     </View>
   );

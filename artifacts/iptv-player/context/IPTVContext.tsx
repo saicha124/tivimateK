@@ -64,6 +64,12 @@ interface IPTVContextValue {
   setSelectedChannel: (channel: Channel | null) => void;
   favorites: string[];
   toggleFavorite: (channelId: string) => void;
+  blockedChannels: string[];
+  toggleBlockChannel: (channelId: string) => void;
+  hiddenChannels: string[];
+  toggleHideChannel: (channelId: string) => void;
+  hiddenGroups: string[];
+  toggleHideGroup: (group: string) => void;
   addPlaylist: (playlist: Omit<Playlist, "id" | "channels" | "movies" | "shows" | "lastUpdated">) => Promise<void>;
   removePlaylist: (id: string) => void;
   isLoading: boolean;
@@ -161,6 +167,9 @@ export function IPTVProvider({ children }: { children: React.ReactNode }) {
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
   const [selectedChannel, setSelectedChannel] = useState<Channel | null>(null);
   const [favorites, setFavorites] = useState<string[]>([]);
+  const [blockedChannels, setBlockedChannels] = useState<string[]>([]);
+  const [hiddenChannels, setHiddenChannels] = useState<string[]>([]);
+  const [hiddenGroups, setHiddenGroups] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState("");
 
@@ -175,6 +184,12 @@ export function IPTVProvider({ children }: { children: React.ReactNode }) {
         }
         const favs = await AsyncStorage.getItem("favorites");
         if (favs) setFavorites(JSON.parse(favs));
+        const blocked = await AsyncStorage.getItem("blockedChannels");
+        if (blocked) setBlockedChannels(JSON.parse(blocked));
+        const hidden = await AsyncStorage.getItem("hiddenChannels");
+        if (hidden) setHiddenChannels(JSON.parse(hidden));
+        const hiddenGrps = await AsyncStorage.getItem("hiddenGroups");
+        if (hiddenGrps) setHiddenGroups(JSON.parse(hiddenGrps));
       } catch {}
     })();
   }, []);
@@ -191,6 +206,36 @@ export function IPTVProvider({ children }: { children: React.ReactNode }) {
         ? prev.filter((id) => id !== channelId)
         : [...prev, channelId];
       AsyncStorage.setItem("favorites", JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const toggleBlockChannel = useCallback(async (channelId: string) => {
+    setBlockedChannels((prev) => {
+      const next = prev.includes(channelId)
+        ? prev.filter((id) => id !== channelId)
+        : [...prev, channelId];
+      AsyncStorage.setItem("blockedChannels", JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const toggleHideChannel = useCallback(async (channelId: string) => {
+    setHiddenChannels((prev) => {
+      const next = prev.includes(channelId)
+        ? prev.filter((id) => id !== channelId)
+        : [...prev, channelId];
+      AsyncStorage.setItem("hiddenChannels", JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const toggleHideGroup = useCallback(async (group: string) => {
+    setHiddenGroups((prev) => {
+      const next = prev.includes(group)
+        ? prev.filter((g) => g !== group)
+        : [...prev, group];
+      AsyncStorage.setItem("hiddenGroups", JSON.stringify(next));
       return next;
     });
   }, []);
@@ -280,6 +325,12 @@ export function IPTVProvider({ children }: { children: React.ReactNode }) {
         setSelectedChannel,
         favorites,
         toggleFavorite,
+        blockedChannels,
+        toggleBlockChannel,
+        hiddenChannels,
+        toggleHideChannel,
+        hiddenGroups,
+        toggleHideGroup,
         addPlaylist,
         removePlaylist,
         isLoading,

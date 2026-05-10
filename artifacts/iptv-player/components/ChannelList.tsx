@@ -1,7 +1,7 @@
 import { Feather } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import * as Haptics from "expo-haptics";
-import React, { useMemo, useRef } from "react";
+import React, { useMemo, useState } from "react";
 import {
   FlatList,
   Platform,
@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { ChannelContextMenu } from "@/components/ChannelContextMenu";
 import { Channel, VODItem, useIPTV } from "@/context/IPTVContext";
 import { useColors } from "@/hooks/useColors";
 
@@ -37,7 +38,19 @@ function progress(channel: Channel) {
 export function ChannelList({ onPlayChannel }: { onPlayChannel: (channel: Channel) => void }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { activePlaylist, currentSection, selectedGroup, selectedChannel, setSelectedChannel, favorites, toggleFavorite } = useIPTV();
+  const {
+    activePlaylist,
+    currentSection,
+    selectedGroup,
+    selectedChannel,
+    setSelectedChannel,
+    favorites,
+    toggleFavorite,
+    blockedChannels,
+    hiddenChannels,
+  } = useIPTV();
+
+  const [contextChannel, setContextChannel] = useState<Channel | null>(null);
 
   const channels = activePlaylist?.channels ?? [];
   const movies = activePlaylist?.movies ?? [];
@@ -45,8 +58,12 @@ export function ChannelList({ onPlayChannel }: { onPlayChannel: (channel: Channe
 
   const items = useMemo(() => {
     if (currentSection === "TV") {
-      if (!selectedGroup) return channels.slice(0, 100);
-      return channels.filter((c) => c.group === selectedGroup);
+      let list = channels.filter(
+        (c) => !hiddenChannels.includes(c.id)
+      );
+      if (!selectedGroup) list = list.slice(0, 100);
+      else list = list.filter((c) => c.group === selectedGroup);
+      return list;
     }
     if (currentSection === "Movies") {
       const vod = selectedGroup ? movies.filter((m) => m.category === selectedGroup) : movies.slice(0, 100);
@@ -69,101 +86,130 @@ export function ChannelList({ onPlayChannel }: { onPlayChannel: (channel: Channe
       } as Channel));
     }
     if (currentSection === "My List") {
-      return channels.filter((c) => favorites.includes(c.id));
+      return channels.filter((c) => favorites.includes(c.id) && !hiddenChannels.includes(c.id));
     }
     return [];
-  }, [currentSection, selectedGroup, channels, movies, shows, favorites]);
+  }, [currentSection, selectedGroup, channels, movies, shows, favorites, hiddenChannels]);
 
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
 
-  return (
-    <FlatList
-      data={items}
-      keyExtractor={(item) => item.id}
-      scrollEnabled={items.length > 0}
-      showsVerticalScrollIndicator={false}
-      contentContainerStyle={{ paddingBottom: bottomPad + 8 }}
-      renderItem={({ item: channel, index }) => {
-        const active = selectedChannel?.id === channel.id;
-        const now = nowProgram(channel);
-        const next = nextProgram(channel);
-        const prog = progress(channel);
-        const isFav = favorites.includes(channel.id);
+  const handleLongPress = (channel: Channel) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setContextChannel(channel);
+  };
 
-        return (
-          <TouchableOpacity
-            onPress={() => {
-              Haptics.selectionAsync();
-              setSelectedChannel(channel);
-            }}
-            onLongPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-              onPlayChannel(channel);
-            }}
-            style={[
-              styles.item,
-              active && { backgroundColor: colors.highlight },
-              { borderBottomColor: colors.border },
-            ]}
-            activeOpacity={0.8}
-          >
-            <View style={styles.indexContainer}>
-              <Text style={[styles.index, { color: colors.mutedForeground }]}>{index + 1}</Text>
-            </View>
-            <View style={[styles.logo, { backgroundColor: colors.secondary }]}>
-              {channel.logo ? (
-                <Image source={{ uri: channel.logo }} style={styles.logoImg} contentFit="contain" />
-              ) : (
-                <Feather name="tv" size={18} color={colors.mutedForeground} />
-              )}
-            </View>
-            <View style={styles.info}>
-              <Text style={[styles.name, { color: active ? colors.primary : colors.foreground }]} numberOfLines={1}>
-                {channel.name}
-              </Text>
-              {now ? (
-                <>
-                  <Text style={[styles.program, { color: colors.mutedForeground }]} numberOfLines={1}>
-                    {now.title}
-                  </Text>
-                  <View style={[styles.progressBar, { backgroundColor: colors.progressBg }]}>
-                    <View style={[styles.progressFill, { backgroundColor: colors.progressFg, width: `${prog * 100}%` }]} />
-                  </View>
-                </>
-              ) : (
-                <Text style={[styles.program, { color: colors.mutedForeground }]} numberOfLines={1}>
-                  {channel.group}
-                </Text>
-              )}
-            </View>
-            {active && (
-              <TouchableOpacity
-                onPress={() => onPlayChannel(channel)}
-                style={[styles.playBtn, { backgroundColor: colors.primary }]}
-              >
-                <Feather name="play" size={14} color="#fff" />
-              </TouchableOpacity>
-            )}
+  return (
+    <>
+      <FlatList
+        data={items}
+        keyExtractor={(item) => item.id}
+        scrollEnabled={items.length > 0}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: bottomPad + 8 }}
+        renderItem={({ item: channel, index }) => {
+          const active = selectedChannel?.id === channel.id;
+          const now = nowProgram(channel);
+          const prog = progress(channel);
+          const isFav = favorites.includes(channel.id);
+          const isBlocked = blockedChannels.includes(channel.id);
+
+          return (
             <TouchableOpacity
-              onPress={() => toggleFavorite(channel.id)}
-              style={styles.favBtn}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              onPress={() => {
+                Haptics.selectionAsync();
+                setSelectedChannel(channel);
+              }}
+              onLongPress={() => handleLongPress(channel)}
+              style={[
+                styles.item,
+                active && { backgroundColor: colors.highlight },
+                isBlocked && { opacity: 0.45 },
+                { borderBottomColor: colors.border },
+              ]}
+              activeOpacity={0.8}
             >
-              <Feather name="star" size={16} color={isFav ? "#FFC107" : colors.mutedForeground} />
+              <View style={styles.indexContainer}>
+                <Text style={[styles.index, { color: colors.mutedForeground }]}>{index + 1}</Text>
+              </View>
+              <View style={[styles.logo, { backgroundColor: colors.secondary }]}>
+                {channel.logo ? (
+                  <Image source={{ uri: channel.logo }} style={styles.logoImg} contentFit="contain" />
+                ) : (
+                  <Feather name="tv" size={18} color={colors.mutedForeground} />
+                )}
+              </View>
+              <View style={styles.info}>
+                <View style={styles.nameRow}>
+                  <Text style={[styles.name, { color: active ? colors.primary : isBlocked ? colors.destructive : colors.foreground }]} numberOfLines={1}>
+                    {channel.name}
+                  </Text>
+                  {isBlocked && (
+                    <View style={[styles.badge, { backgroundColor: `${colors.destructive}22` }]}>
+                      <Text style={[styles.badgeText, { color: colors.destructive }]}>BLOCKED</Text>
+                    </View>
+                  )}
+                </View>
+                {now ? (
+                  <>
+                    <Text style={[styles.program, { color: colors.mutedForeground }]} numberOfLines={1}>
+                      {now.title}
+                    </Text>
+                    <View style={[styles.progressBar, { backgroundColor: colors.progressBg }]}>
+                      <View style={[styles.progressFill, { backgroundColor: colors.progressFg, width: `${prog * 100}%` }]} />
+                    </View>
+                  </>
+                ) : (
+                  <Text style={[styles.program, { color: colors.mutedForeground }]} numberOfLines={1}>
+                    {channel.group}
+                  </Text>
+                )}
+              </View>
+              {active && (
+                <TouchableOpacity
+                  onPress={() => onPlayChannel(channel)}
+                  style={[styles.playBtn, { backgroundColor: colors.primary }]}
+                >
+                  <Feather name="play" size={14} color="#fff" />
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity
+                onPress={() => {
+                  Haptics.selectionAsync();
+                  toggleFavorite(channel.id);
+                }}
+                style={styles.favBtn}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Feather name="star" size={16} color={isFav ? "#FFC107" : colors.mutedForeground} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => handleLongPress(channel)}
+                style={styles.moreBtn}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Feather name="more-vertical" size={15} color={colors.mutedForeground} />
+              </TouchableOpacity>
             </TouchableOpacity>
-          </TouchableOpacity>
-        );
-      }}
-      ListEmptyComponent={
-        <View style={styles.empty}>
-          <Feather name="tv" size={40} color={colors.mutedForeground} style={{ marginBottom: 12 }} />
-          <Text style={[styles.emptyTitle, { color: colors.foreground }]}>No channels</Text>
-          <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
-            Select a group or add a playlist
-          </Text>
-        </View>
-      }
-    />
+          );
+        }}
+        ListEmptyComponent={
+          <View style={styles.empty}>
+            <Feather name="tv" size={40} color={colors.mutedForeground} style={{ marginBottom: 12 }} />
+            <Text style={[styles.emptyTitle, { color: colors.foreground }]}>No channels</Text>
+            <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
+              Select a group or add a playlist
+            </Text>
+          </View>
+        }
+      />
+
+      <ChannelContextMenu
+        channel={contextChannel}
+        visible={!!contextChannel}
+        onClose={() => setContextChannel(null)}
+        onPlay={onPlayChannel}
+      />
+    </>
   );
 }
 
@@ -200,9 +246,25 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 2,
   },
+  nameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
   name: {
     fontSize: 13,
     fontFamily: "Inter_500Medium",
+    flex: 1,
+  },
+  badge: {
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 3,
+  },
+  badgeText: {
+    fontSize: 9,
+    fontFamily: "Inter_700Bold",
+    letterSpacing: 0.5,
   },
   program: {
     fontSize: 11,
@@ -226,6 +288,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   favBtn: {
+    padding: 4,
+  },
+  moreBtn: {
     padding: 4,
   },
   empty: {

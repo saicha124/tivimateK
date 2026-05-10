@@ -39,7 +39,7 @@ export default function HomeScreen() {
 
   const handlePlayChannel = (channel: Channel) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    router.push({ pathname: "/player", params: { url: channel.url, name: channel.name } });
+    router.push({ pathname: "/player", params: { url: channel.url, name: channel.name, channelId: channel.id } });
   };
 
   const handleCatchUp = (channel: Channel, program: EPGProgram) => {
