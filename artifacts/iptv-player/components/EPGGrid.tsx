@@ -20,11 +20,12 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { ProgramDetailsSheet } from "@/components/ProgramDetailsSheet";
 import { Channel, EPGProgram, useIPTV } from "@/context/IPTVContext";
 import { useColors } from "@/hooks/useColors";
-import { ensureEPG, generateMockEPG } from "@/utils/mockEPG";
+import { ensureEPG } from "@/utils/mockEPG";
 
-const SLOT_WIDTH = 120; // px per 30 min
+const SLOT_WIDTH = 120;
 const CHANNEL_COL_WIDTH = 72;
 const ROW_HEIGHT = 56;
 const HEADER_HEIGHT = 36;
@@ -42,57 +43,90 @@ function clamp(val: number, min: number, max: number) {
   return Math.max(min, Math.min(max, val));
 }
 
+type ProgramState = "past" | "current" | "future";
+
+function getProgramState(program: EPGProgram, now: number): ProgramState {
+  if (program.endTime < now) return "past";
+  if (program.startTime > now) return "future";
+  return "current";
+}
+
 interface ProgramBlockProps {
   program: EPGProgram;
   refTime: number;
-  isActive: boolean;
-  isNow: boolean;
+  isSelected: boolean;
+  state: ProgramState;
   onPress: () => void;
 }
 
-function ProgramBlock({ program, refTime, isActive, isNow, onPress }: ProgramBlockProps) {
+function ProgramBlock({ program, refTime, isSelected, state, onPress }: ProgramBlockProps) {
   const colors = useColors();
   const left = msToSlotOffset(program.startTime, refTime);
   const width = msToSlotOffset(program.endTime, refTime) - left - 2;
 
   if (width < 4) return null;
 
+  const bg = isSelected
+    ? colors.primary
+    : state === "past"
+    ? "#1a1a1a"
+    : state === "current"
+    ? colors.highlight
+    : colors.secondary;
+
+  const titleColor = isSelected
+    ? "#fff"
+    : state === "past"
+    ? colors.mutedForeground
+    : state === "current"
+    ? colors.foreground
+    : colors.secondaryForeground;
+
+  const borderColor = isSelected
+    ? colors.primary
+    : state === "current"
+    ? `${colors.primary}60`
+    : colors.border;
+
+  const progress =
+    state === "current"
+      ? clamp((Date.now() - program.startTime) / (program.endTime - program.startTime), 0, 1)
+      : 0;
+
   return (
     <TouchableOpacity
       onPress={onPress}
-      activeOpacity={0.7}
+      activeOpacity={0.75}
       style={[
         styles.programBlock,
-        {
-          left,
-          width,
-          backgroundColor: isActive
-            ? colors.primary
-            : isNow
-            ? colors.highlight
-            : colors.secondary,
-          borderColor: isActive ? colors.primary : colors.border,
-        },
+        { left, width, backgroundColor: bg, borderColor },
       ]}
     >
-      <Text
-        style={[
-          styles.programTitle,
-          { color: isActive ? "#fff" : isNow ? colors.foreground : colors.mutedForeground },
-        ]}
-        numberOfLines={1}
-      >
+      {/* Progress fill for current program */}
+      {state === "current" && progress > 0 && (
+        <View
+          style={[
+            styles.progressOverlay,
+            { width: `${progress * 100}%` as any, backgroundColor: `${colors.primary}30` },
+          ]}
+        />
+      )}
+
+      <Text style={[styles.programTitle, { color: titleColor }]} numberOfLines={1}>
         {program.title}
       </Text>
       {width > 80 && (
-        <Text
-          style={[
-            styles.programTime,
-            { color: isActive ? "rgba(255,255,255,0.7)" : colors.mutedForeground },
-          ]}
-        >
-          {formatHour(program.startTime)}
-        </Text>
+        <View style={styles.programMeta}>
+          {state === "past" && (
+            <Feather name="rotate-ccw" size={9} color={colors.mutedForeground} />
+          )}
+          {state === "current" && (
+            <View style={styles.liveIndicator} />
+          )}
+          <Text style={[styles.programTime, { color: isSelected ? "rgba(255,255,255,0.7)" : colors.mutedForeground }]}>
+            {formatHour(program.startTime)}
+          </Text>
+        </View>
       )}
     </TouchableOpacity>
   );
@@ -100,30 +134,29 @@ function ProgramBlock({ program, refTime, isActive, isNow, onPress }: ProgramBlo
 
 interface EPGGridProps {
   onPlayChannel: (channel: Channel) => void;
+  onCatchUp: (channel: Channel, program: EPGProgram) => void;
 }
 
-export function EPGGrid({ onPlayChannel }: EPGGridProps) {
+export function EPGGrid({ onPlayChannel, onCatchUp }: EPGGridProps) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { activePlaylist, selectedGroup, currentSection, selectedChannel, setSelectedChannel } = useIPTV();
+  const { activePlaylist, selectedGroup, selectedChannel, setSelectedChannel } = useIPTV();
 
   const now = Date.now();
-  // Round down to nearest 30min for the grid reference start (2 hours back)
   const refTime = useMemo(() => {
     const hoursBack = 2;
     return Math.floor((now - hoursBack * 60 * 60 * 1000) / (MINS_PER_SLOT * 60 * 1000)) * (MINS_PER_SLOT * 60 * 1000);
   }, []);
 
-  // Generate time slots: from refTime to +8h
-  const totalSlots = (2 + 8) * 2; // 2h back + 8h forward, 2 slots per hour
+  const totalSlots = (2 + 8) * 2;
   const timeSlots = useMemo(() => {
     return Array.from({ length: totalSlots }, (_, i) => refTime + i * MINS_PER_SLOT * 60 * 1000);
   }, [refTime]);
 
   const totalWidth = totalSlots * SLOT_WIDTH;
   const nowOffset = msToSlotOffset(now, refTime);
+  const initialX = clamp(nowOffset - SLOT_WIDTH, 0, totalWidth);
 
-  // Get channels for the current group/section
   const rawChannels = useMemo(() => {
     if (!activePlaylist) return [];
     const all = activePlaylist.channels;
@@ -134,49 +167,46 @@ export function EPGGrid({ onPlayChannel }: EPGGridProps) {
   const channels = useMemo(() => ensureEPG(rawChannels), [rawChannels]);
 
   // Synchronized horizontal scroll
-  const mainScrollRef = useRef<ScrollView>(null);
   const headerScrollRef = useRef<ScrollView>(null);
   const rowScrollRefs = useRef<Map<string, ScrollView | null>>(new Map());
   const isScrolling = useRef(false);
-  const [selectedProgram, setSelectedProgram] = useState<EPGProgram | null>(null);
+  const lastScrollX = useRef(initialX);
+
+  // Program details sheet state
+  const [sheetChannel, setSheetChannel] = useState<Channel | null>(null);
+  const [sheetProgram, setSheetProgram] = useState<EPGProgram | null>(null);
 
   const syncScroll = useCallback((x: number, sourceId: string) => {
     if (isScrolling.current) return;
     isScrolling.current = true;
-
+    lastScrollX.current = x;
     headerScrollRef.current?.scrollTo({ x, animated: false });
     rowScrollRefs.current.forEach((ref, id) => {
-      if (id !== sourceId && ref) {
-        ref.scrollTo({ x, animated: false });
-      }
+      if (id !== sourceId && ref) ref.scrollTo({ x, animated: false });
     });
-
-    setTimeout(() => { isScrolling.current = false; }, 50);
+    setTimeout(() => { isScrolling.current = false; }, 30);
   }, []);
-
-  const onHeaderScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    syncScroll(e.nativeEvent.contentOffset.x, "header");
-  }, [syncScroll]);
 
   const onRowScroll = useCallback((channelId: string) => (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     syncScroll(e.nativeEvent.contentOffset.x, channelId);
   }, [syncScroll]);
 
-  // Initial scroll to "now minus 1 slot"
-  const initialX = clamp(nowOffset - SLOT_WIDTH, 0, totalWidth);
+  const onHeaderScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    syncScroll(e.nativeEvent.contentOffset.x, "header");
+  }, [syncScroll]);
 
-  const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
-  const topPad = Platform.OS === "web" ? 67 : insets.top;
-
-  const handleProgramPress = (channel: Channel, program: EPGProgram) => {
+  const handleProgramPress = useCallback((channel: Channel, program: EPGProgram) => {
     Haptics.selectionAsync();
     setSelectedChannel(channel);
-    setSelectedProgram(program);
-  };
+    setSheetChannel(channel);
+    setSheetProgram(program);
+  }, [setSelectedChannel]);
 
-  const renderChannelRow = useCallback(({ item: channel }: { item: Channel }) => {
+  const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
+  const topPad = Platform.OS === "web" ? 0 : 0;
+
+  const renderRow = useCallback(({ item: channel }: { item: Channel }) => {
     const isActive = selectedChannel?.id === channel.id;
-    const nowProg = channel.epg?.find((p) => p.startTime <= now && p.endTime >= now);
 
     return (
       <View style={[styles.row, { borderBottomColor: colors.border }]}>
@@ -189,10 +219,7 @@ export function EPGGrid({ onPlayChannel }: EPGGridProps) {
               borderRightColor: colors.border,
             },
           ]}
-          onPress={() => {
-            Haptics.selectionAsync();
-            setSelectedChannel(channel);
-          }}
+          onPress={() => { Haptics.selectionAsync(); setSelectedChannel(channel); }}
           onLongPress={() => onPlayChannel(channel)}
           activeOpacity={0.7}
         >
@@ -200,21 +227,18 @@ export function EPGGrid({ onPlayChannel }: EPGGridProps) {
             {channel.logo ? (
               <Image source={{ uri: channel.logo }} style={styles.logo} contentFit="contain" />
             ) : (
-              <Feather name="tv" size={14} color={colors.mutedForeground} />
+              <Feather name="tv" size={13} color={colors.mutedForeground} />
             )}
           </View>
           <Text
-            style={[
-              styles.channelName,
-              { color: isActive ? colors.primary : colors.mutedForeground },
-            ]}
+            style={[styles.channelName, { color: isActive ? colors.primary : colors.mutedForeground }]}
             numberOfLines={2}
           >
             {channel.name}
           </Text>
         </TouchableOpacity>
 
-        {/* Programs row */}
+        {/* Program timeline */}
         <ScrollView
           ref={(ref) => rowScrollRefs.current.set(channel.id, ref)}
           horizontal
@@ -225,33 +249,45 @@ export function EPGGrid({ onPlayChannel }: EPGGridProps) {
           style={styles.programsScroll}
           contentContainerStyle={{ width: totalWidth, height: ROW_HEIGHT }}
         >
-          {(channel.epg ?? []).map((program, idx) => {
-            const isActiveProg = selectedProgram?.title === program.title &&
-              selectedProgram?.startTime === program.startTime &&
-              isActive;
-            const isNow = program.startTime <= now && program.endTime >= now;
-            return (
-              <ProgramBlock
-                key={idx}
-                program={program}
-                refTime={refTime}
-                isActive={isActiveProg}
-                isNow={isNow}
-                onPress={() => handleProgramPress(channel, program)}
-              />
-            );
-          })}
-          {/* Now line */}
+          {/* Past dim overlay */}
           <View
             style={[
-              styles.nowLine,
-              { left: nowOffset, backgroundColor: colors.primary },
+              styles.pastOverlay,
+              {
+                width: nowOffset,
+                backgroundColor: "rgba(0,0,0,0.35)",
+              },
             ]}
+            pointerEvents="none"
+          />
+
+          {(channel.epg ?? []).map((program, idx) => (
+            <ProgramBlock
+              key={idx}
+              program={program}
+              refTime={refTime}
+              isSelected={
+                sheetChannel?.id === channel.id &&
+                sheetProgram?.startTime === program.startTime
+              }
+              state={getProgramState(program, now)}
+              onPress={() => handleProgramPress(channel, program)}
+            />
+          ))}
+
+          {/* Current time line */}
+          <View
+            style={[styles.nowLine, { left: nowOffset, backgroundColor: colors.primary }]}
+            pointerEvents="none"
+          />
+          <View
+            style={[styles.nowTriangle, { left: nowOffset - 5, borderTopColor: colors.primary }]}
+            pointerEvents="none"
           />
         </ScrollView>
       </View>
     );
-  }, [selectedChannel, selectedProgram, colors, now, refTime, totalWidth, nowOffset, initialX, onRowScroll, onPlayChannel]);
+  }, [selectedChannel, sheetChannel, sheetProgram, colors, now, refTime, totalWidth, nowOffset, initialX, onRowScroll, handleProgramPress, onPlayChannel]);
 
   if (!activePlaylist || channels.length === 0) {
     return (
@@ -259,18 +295,18 @@ export function EPGGrid({ onPlayChannel }: EPGGridProps) {
         <Feather name="grid" size={40} color={colors.mutedForeground} style={{ marginBottom: 12 }} />
         <Text style={[styles.emptyTitle, { color: colors.foreground }]}>No channels</Text>
         <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
-          Select a group to view the program guide
+          Select a group to view the TV guide
         </Text>
       </View>
     );
   }
 
   return (
-    <View style={[styles.container, { paddingTop: topPad }]}>
-      {/* EPG Header (time ruler) */}
-      <View style={[styles.headerRow, { borderBottomColor: colors.border, backgroundColor: colors.sidebar }]}>
-        <View style={[styles.channelHeaderCell, { borderRightColor: colors.border, backgroundColor: colors.sidebar }]}>
-          <Text style={[styles.headerLabel, { color: colors.mutedForeground }]}>CH</Text>
+    <View style={styles.container}>
+      {/* Time ruler header */}
+      <View style={[styles.headerRow, { backgroundColor: colors.muted, borderBottomColor: colors.border }]}>
+        <View style={[styles.channelHeaderCell, { borderRightColor: colors.border, backgroundColor: colors.muted }]}>
+          <Feather name="tv" size={12} color={colors.mutedForeground} />
         </View>
         <ScrollView
           ref={headerScrollRef}
@@ -283,32 +319,30 @@ export function EPGGrid({ onPlayChannel }: EPGGridProps) {
           style={styles.headerScroll}
           contentContainerStyle={{ width: totalWidth, height: HEADER_HEIGHT }}
         >
-          {timeSlots.map((slot, i) => (
-            <View
-              key={i}
-              style={[
-                styles.timeSlot,
-                {
-                  left: i * SLOT_WIDTH,
-                  borderRightColor: colors.border,
-                },
-              ]}
-            >
-              <Text style={[styles.timeText, { color: colors.mutedForeground }]}>
-                {formatHour(slot)}
-              </Text>
-            </View>
-          ))}
-          {/* Now marker on header */}
+          {/* Past tint on header */}
+          <View
+            style={[styles.pastOverlay, { width: nowOffset, backgroundColor: "rgba(0,0,0,0.2)" }]}
+            pointerEvents="none"
+          />
+          {timeSlots.map((slot, i) => {
+            const isPastSlot = slot + MINS_PER_SLOT * 60 * 1000 < now;
+            return (
+              <View key={i} style={[styles.timeSlot, { left: i * SLOT_WIDTH, borderRightColor: colors.border }]}>
+                <Text style={[styles.timeText, { color: isPastSlot ? colors.mutedForeground : colors.foreground }]}>
+                  {formatHour(slot)}
+                </Text>
+              </View>
+            );
+          })}
+          {/* Now marker */}
           <View style={[styles.nowMarker, { left: nowOffset, backgroundColor: colors.primary }]} />
         </ScrollView>
       </View>
 
-      {/* Channel rows */}
       <FlatList
         data={channels}
         keyExtractor={(item) => item.id}
-        renderItem={renderChannelRow}
+        renderItem={renderRow}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: bottomPad + 8 }}
         getItemLayout={(_, index) => ({
@@ -317,14 +351,21 @@ export function EPGGrid({ onPlayChannel }: EPGGridProps) {
           index,
         })}
       />
+
+      <ProgramDetailsSheet
+        visible={!!sheetProgram}
+        channel={sheetChannel}
+        program={sheetProgram}
+        onClose={() => { setSheetProgram(null); setSheetChannel(null); }}
+        onWatchLive={onPlayChannel}
+        onWatchCatchUp={onCatchUp}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
+  container: { flex: 1 },
   headerRow: {
     flexDirection: "row",
     height: HEADER_HEIGHT,
@@ -336,32 +377,24 @@ const styles = StyleSheet.create({
     alignItems: "center",
     borderRightWidth: 1,
   },
-  headerLabel: {
-    fontSize: 10,
-    fontFamily: "Inter_600SemiBold",
-    letterSpacing: 1,
-  },
-  headerScroll: {
-    flex: 1,
-  },
+  headerScroll: { flex: 1 },
   timeSlot: {
     position: "absolute",
     width: SLOT_WIDTH,
     height: HEADER_HEIGHT,
     justifyContent: "center",
-    paddingHorizontal: 6,
+    paddingHorizontal: 8,
     borderRightWidth: StyleSheet.hairlineWidth,
   },
   timeText: {
     fontSize: 11,
-    fontFamily: "Inter_500Medium",
+    fontFamily: "Inter_600SemiBold",
   },
   nowMarker: {
     position: "absolute",
     top: 0,
     width: 2,
     height: HEADER_HEIGHT,
-    borderRadius: 1,
   },
   row: {
     flexDirection: "row",
@@ -386,10 +419,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     overflow: "hidden",
   },
-  logo: {
-    width: 36,
-    height: 24,
-  },
+  logo: { width: 36, height: 24 },
   channelName: {
     fontSize: 9,
     fontFamily: "Inter_400Regular",
@@ -402,31 +432,68 @@ const styles = StyleSheet.create({
   },
   programBlock: {
     position: "absolute",
-    top: 4,
-    height: ROW_HEIGHT - 8,
-    borderRadius: 3,
-    paddingHorizontal: 6,
-    paddingVertical: 4,
+    top: 5,
+    height: ROW_HEIGHT - 10,
+    borderRadius: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 5,
     borderWidth: StyleSheet.hairlineWidth,
     justifyContent: "center",
     overflow: "hidden",
+  },
+  progressOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    bottom: 0,
+    borderRadius: 3,
   },
   programTitle: {
     fontSize: 11,
     fontFamily: "Inter_500Medium",
   },
+  programMeta: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    marginTop: 2,
+  },
   programTime: {
     fontSize: 9,
     fontFamily: "Inter_400Regular",
-    marginTop: 1,
+  },
+  liveIndicator: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: "#4caf50",
+  },
+  pastOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    bottom: 0,
+    zIndex: 1,
+    pointerEvents: "none",
   },
   nowLine: {
     position: "absolute",
     top: 0,
     width: 2,
     height: ROW_HEIGHT,
-    borderRadius: 1,
-    opacity: 0.8,
+    zIndex: 10,
+  },
+  nowTriangle: {
+    position: "absolute",
+    top: 0,
+    width: 0,
+    height: 0,
+    borderLeftWidth: 5,
+    borderRightWidth: 5,
+    borderTopWidth: 7,
+    borderLeftColor: "transparent",
+    borderRightColor: "transparent",
+    zIndex: 10,
   },
   emptyContainer: {
     flex: 1,
@@ -443,6 +510,5 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontFamily: "Inter_400Regular",
     textAlign: "center",
-    color: "#666",
   },
 });

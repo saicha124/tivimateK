@@ -20,7 +20,7 @@ import { GroupList } from "@/components/GroupList";
 import { ProgramInfo } from "@/components/ProgramInfo";
 import { SearchModal } from "@/components/SearchModal";
 import { Sidebar } from "@/components/Sidebar";
-import { Channel, useIPTV } from "@/context/IPTVContext";
+import { Channel, EPGProgram, useIPTV } from "@/context/IPTVContext";
 import { useColors } from "@/hooks/useColors";
 
 type ViewMode = "list" | "epg";
@@ -38,6 +38,19 @@ export default function HomeScreen() {
   const handlePlayChannel = (channel: Channel) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     router.push({ pathname: "/player", params: { url: channel.url, name: channel.name } });
+  };
+
+  const handleCatchUp = (channel: Channel, program: EPGProgram) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    router.push({
+      pathname: "/player",
+      params: {
+        url: channel.url,
+        name: channel.name,
+        catchUpStart: String(program.startTime),
+        catchUpEnd: String(program.endTime),
+      },
+    });
   };
 
   const handleSettings = () => {
@@ -118,7 +131,7 @@ export default function HomeScreen() {
             /* EPG Grid view */
             <View style={styles.epgContainer}>
               <GroupList />
-              <EPGGrid onPlayChannel={handlePlayChannel} />
+              <EPGGrid onPlayChannel={handlePlayChannel} onCatchUp={handleCatchUp} />
             </View>
           ) : (
             /* List view */
