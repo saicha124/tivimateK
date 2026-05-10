@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AddPlaylistWizard } from "@/components/AddPlaylistWizard";
 import { ChannelList } from "@/components/ChannelList";
+import { EPGGrid } from "@/components/EPGGrid";
 import { GroupList } from "@/components/GroupList";
 import { ProgramInfo } from "@/components/ProgramInfo";
 import { SearchModal } from "@/components/SearchModal";
@@ -22,14 +23,17 @@ import { Sidebar } from "@/components/Sidebar";
 import { Channel, useIPTV } from "@/context/IPTVContext";
 import { useColors } from "@/hooks/useColors";
 
+type ViewMode = "list" | "epg";
+
 export default function HomeScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { activePlaylist, selectedChannel } = useIPTV();
+  const { activePlaylist, selectedChannel, currentSection } = useIPTV();
 
   const [showAddPlaylist, setShowAddPlaylist] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
+  const [viewMode, setViewMode] = useState<ViewMode>("list");
 
   const handlePlayChannel = (channel: Channel) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -38,6 +42,11 @@ export default function HomeScreen() {
 
   const handleSettings = () => {
     router.push("/settings");
+  };
+
+  const toggleView = () => {
+    Haptics.selectionAsync();
+    setViewMode((v) => (v === "list" ? "epg" : "list"));
   };
 
   if (!activePlaylist) {
@@ -91,12 +100,36 @@ export default function HomeScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <StatusBar barStyle="light-content" backgroundColor={colors.background} />
+
       <View style={styles.mainLayout}>
         <Sidebar onSearch={() => setShowSearch(true)} onSettings={handleSettings} />
-        <GroupList />
+
+        {/* Right content area */}
         <View style={styles.contentArea}>
-          {selectedChannel && <ProgramInfo onPlay={handlePlayChannel} />}
-          <ChannelList onPlayChannel={handlePlayChannel} />
+          {/* Top bar with view toggle */}
+          <TopBar
+            viewMode={viewMode}
+            onToggleView={toggleView}
+            onAddPlaylist={() => setShowAddPlaylist(true)}
+            showEPGToggle={currentSection === "TV"}
+          />
+
+          {viewMode === "epg" && currentSection === "TV" ? (
+            /* EPG Grid view */
+            <View style={styles.epgContainer}>
+              <GroupList />
+              <EPGGrid onPlayChannel={handlePlayChannel} />
+            </View>
+          ) : (
+            /* List view */
+            <View style={styles.listContainer}>
+              <GroupList />
+              <View style={styles.channelArea}>
+                {selectedChannel && <ProgramInfo onPlay={handlePlayChannel} />}
+                <ChannelList onPlayChannel={handlePlayChannel} />
+              </View>
+            </View>
+          )}
         </View>
       </View>
 
@@ -128,6 +161,85 @@ export default function HomeScreen() {
   );
 }
 
+function TopBar({
+  viewMode,
+  onToggleView,
+  onAddPlaylist,
+  showEPGToggle,
+}: {
+  viewMode: ViewMode;
+  onToggleView: () => void;
+  onAddPlaylist: () => void;
+  showEPGToggle: boolean;
+}) {
+  const colors = useColors();
+  const insets = useSafeAreaInsets();
+  const topPad = Platform.OS === "web" ? 67 : insets.top;
+
+  return (
+    <View
+      style={[
+        styles.topBar,
+        {
+          paddingTop: topPad + 4,
+          backgroundColor: colors.sidebar,
+          borderBottomColor: colors.border,
+        },
+      ]}
+    >
+      {showEPGToggle && (
+        <View style={[styles.viewToggle, { backgroundColor: colors.secondary, borderColor: colors.border }]}>
+          <TouchableOpacity
+            onPress={viewMode === "epg" ? onToggleView : undefined}
+            style={[
+              styles.toggleBtn,
+              viewMode === "list" && { backgroundColor: colors.primary },
+            ]}
+            activeOpacity={0.7}
+          >
+            <Feather
+              name="list"
+              size={14}
+              color={viewMode === "list" ? "#fff" : colors.mutedForeground}
+            />
+            <Text
+              style={[
+                styles.toggleLabel,
+                { color: viewMode === "list" ? "#fff" : colors.mutedForeground },
+              ]}
+            >
+              List
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={viewMode === "list" ? onToggleView : undefined}
+            style={[
+              styles.toggleBtn,
+              viewMode === "epg" && { backgroundColor: colors.primary },
+            ]}
+            activeOpacity={0.7}
+          >
+            <Feather
+              name="grid"
+              size={14}
+              color={viewMode === "epg" ? "#fff" : colors.mutedForeground}
+            />
+            <Text
+              style={[
+                styles.toggleLabel,
+                { color: viewMode === "epg" ? "#fff" : colors.mutedForeground },
+              ]}
+            >
+              Guide
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
+      <View style={{ flex: 1 }} />
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -137,6 +249,44 @@ const styles = StyleSheet.create({
     flexDirection: "row",
   },
   contentArea: {
+    flex: 1,
+    flexDirection: "column",
+  },
+  topBar: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    paddingHorizontal: 12,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+  },
+  viewToggle: {
+    flexDirection: "row",
+    borderRadius: 8,
+    padding: 3,
+    borderWidth: 1,
+    gap: 2,
+  },
+  toggleBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 6,
+  },
+  toggleLabel: {
+    fontSize: 12,
+    fontFamily: "Inter_500Medium",
+  },
+  epgContainer: {
+    flex: 1,
+    flexDirection: "row",
+  },
+  listContainer: {
+    flex: 1,
+    flexDirection: "row",
+  },
+  channelArea: {
     flex: 1,
   },
   emptyState: {
